@@ -1,0 +1,63 @@
+{
+  "name": "@schema-ts/vue",
+  "version": "0.1.0",
+  "description": "Vue form generator from schema",
+  "author": "cnfatal",
+  "license": "MIT",
+  "homepage": "https://github.com/cnfatal/schema-ts/tree/main/packages/vue#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cnfatal/schema-ts.git",
+    "directory": "packages/vue"
+  },
+  "bugs": {
+    "url": "https://github.com/cnfatal/schema-ts/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "keywords": [
+    "schema",
+    "vue",
+    "form",
+    "generator"
+  ],
+  "peerDependencies": {
+    "vue": "^3.0.0"
+  },
+  "dependencies": {
+    "@schema-ts/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.2",
+    "eslint-plugin-vue": "^10.6.2",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15",
+    "vue": "^3.5.25"
+  }
+}

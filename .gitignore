@@ -1,0 +1,15 @@
+node_modules
+dist
+build
+coverage
+*.log
+.turbo
+.DS_Store
+pnpm-lock.yaml
+*.tgz
+.pnpm-store
+.vscode
+.idea
+.husky
+*.tsbuildinfo
+/spec
