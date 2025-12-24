@@ -118,6 +118,78 @@ describe("validateSchema", () => {
     expect(validateSchema(schema, { type: "worker" }).valid).toBe(false);
   });
 
+  it("validates nested if/then/else", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        contactMethod: { type: "string" },
+      },
+      if: {
+        properties: {
+          contactMethod: { const: "phone" },
+        },
+      },
+      then: {
+        properties: {
+          phoneNumber: {
+            type: "string",
+            title: "Phone Number",
+            pattern: "^\\+?[0-9]{10,15}$",
+          },
+        },
+        required: ["phoneNumber"],
+      },
+      else: {
+        if: {
+          properties: {
+            contactMethod: { const: "mail" },
+          },
+        },
+        then: {
+          properties: {
+            mailingAddress: {
+              type: "string",
+              title: "Mailing Address",
+              minLength: 10,
+            },
+          },
+          required: ["mailingAddress"],
+        },
+      },
+    };
+
+    // Case 1: Phone
+    expect(
+      validateSchema(schema, {
+        contactMethod: "phone",
+        phoneNumber: "+1234567890",
+      }).valid,
+    ).toBe(true);
+    expect(
+      validateSchema(schema, { contactMethod: "phone", phoneNumber: "123" })
+        .valid,
+    ).toBe(false); // pattern mismatch
+    expect(validateSchema(schema, { contactMethod: "phone" }).valid).toBe(
+      false,
+    ); // missing phoneNumber
+
+    // Case 2: Mail
+    expect(
+      validateSchema(schema, {
+        contactMethod: "mail",
+        mailingAddress: "123 Main St, Anytown, USA",
+      }).valid,
+    ).toBe(true);
+    expect(
+      validateSchema(schema, { contactMethod: "mail", mailingAddress: "short" })
+        .valid,
+    ).toBe(false); // too short
+    expect(validateSchema(schema, { contactMethod: "mail" }).valid).toBe(false); // missing mailingAddress
+
+    // Case 3: Other (no additional requirements)
+    expect(validateSchema(schema, { contactMethod: "other" }).valid).toBe(true);
+  });
+
   it("validates advanced object constraints (dependencies, propertyNames)", () => {
     const schema = {
       dependentRequired: { credit_card: ["billing_address"] },

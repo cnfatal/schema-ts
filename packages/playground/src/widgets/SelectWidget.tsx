@@ -14,17 +14,6 @@ export function DefaultSelectWidget({
   description,
   required,
 }: SelectWidgetProps) {
-  const handleChange = (val: string) => {
-    if (Array.isArray(options)) {
-      const index = options.findIndex((opt) => String(opt) === val);
-      if (index !== -1) {
-        onChange(options[index]);
-        return;
-      }
-    }
-    onChange(val);
-  };
-
   return (
     <FormField>
       <SelectField
@@ -33,7 +22,7 @@ export function DefaultSelectWidget({
         value={value as any}
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         options={options as any}
-        onChange={handleChange}
+        onChange={onChange}
         error={error}
         description={description}
         required={required}

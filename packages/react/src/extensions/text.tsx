@@ -1,26 +1,19 @@
 import { defineExtension, WidgetProps } from "../SimpleFieldRenderer";
 
 export interface TextWidgetProps extends WidgetProps {
-  value: string | number | undefined;
-  onChange: (value: string | number) => void;
-  type: "text" | "number" | "integer";
+  value: string | undefined;
+  onChange: (value: string) => void;
 }
 
-/** Text widget extension - handles string, number, integer types */
-export const textExtension = defineExtension<TextWidgetProps>(
-  "text",
-  // Placeholder component - actual component is provided by registry
-  (() => null) as React.ComponentType<TextWidgetProps>,
-  {
-    match: (props) =>
-      props.type === "string" ||
-      props.type === "number" ||
-      props.type === "integer",
+/** Text widget extension - handles string type */
+export const textExtension = (
+  component: React.ComponentType<TextWidgetProps>,
+) =>
+  defineExtension<TextWidgetProps>("text", component, {
+    match: (props) => props.type === "string",
     mapProps: (props, base) => ({
       ...base,
-      value: props.value as string | number | undefined,
-      onChange: props.onChange,
-      type: props.type as "text" | "number" | "integer",
+      value: props.value as string | undefined,
+      onChange: props.onChange as (value: string) => void,
     }),
-  },
-);
+  });

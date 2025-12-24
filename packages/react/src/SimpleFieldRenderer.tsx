@@ -1,30 +1,38 @@
 import React from "react";
 import { Schema, type FieldNode, type Output } from "@schema-ts/core";
 import { FormField, FormFieldRenderProps } from "./Form";
-import { builtinExtensions } from "./extensions";
-
-export type {
-  TextWidgetProps,
-  SelectWidgetProps,
-  SwitchWidgetProps,
-  ArrayWidgetProps,
-  ArrayItemProps,
-  ObjectWidgetProps,
-} from "./extensions";
 
 /** Schema-agnostic base props for all widgets */
 
 export interface WidgetProps {
+  // also the title
   label: string;
   description?: string;
   required?: boolean;
   disabled?: boolean;
   error?: string;
+
+  // the schema for the field being rendered
   schema: Schema;
+
+  // WidgetRegistry to components reuse
   registry: WidgetRegistry;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  value: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onChange: (value: any) => void;
+
   renderChild: (child: FieldNode) => React.ReactNode;
+
+  // Additional props specific to widget implementations
   [key: string]: unknown;
 }
+
+export type UnknownWidgetProps = WidgetProps & {
+  value: unknown;
+  onChange: (value: unknown) => void;
+};
 
 export type WidgetType = string;
 
@@ -33,21 +41,16 @@ export type WidgetTypeProps = [WidgetType, WidgetProps];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type WidgetRegistry = Record<WidgetType, React.ComponentType<any>>;
 
-export type WidgetTypePropsParser = (
-  props: FormFieldRenderProps,
-  baseProps: WidgetProps,
-) => WidgetTypeProps | null;
-
-/**
- * A unified extension object that bundles together:
- * - type: the widget type identifier
- * - component: the React component to render
- * - parse: the parser function that determines if this extension applies
- */
 export interface WidgetExtension<T> {
+  /** Unique identifier for the extension, used as the key in the widget registry */
   type: string;
+  /** React component used to render the field for this extension */
   component: React.ComponentType<T>;
-  parse: WidgetTypePropsParser;
+
+  /** Function to determine if this extension matches given FormFieldRenderProps */
+  match?: (props: FormFieldRenderProps) => boolean;
+  /** Function to map FormFieldRenderProps to the specific WidgetProps for this extension */
+  mapProps?: (props: FormFieldRenderProps, base: WidgetProps) => T;
 }
 
 /**
@@ -76,10 +79,8 @@ export function defineExtension<T extends WidgetProps>(
   return {
     type,
     component,
-    parse: (props: FormFieldRenderProps, base: WidgetProps) => {
-      if (!options.match(props)) return null;
-      return [type, options.mapProps(props, base)];
-    },
+    match: options.match,
+    mapProps: options.mapProps,
   };
 }
 
@@ -87,6 +88,7 @@ export class SimpleFieldRenderer {
   private registry: WidgetRegistry;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private extensions: WidgetExtension<any>[];
+  private mapErrorMessage: (output?: Output) => string | undefined;
 
   /**
    * Creates a new SimpleFieldRenderer.
@@ -95,13 +97,19 @@ export class SimpleFieldRenderer {
    * @param extensions - Array of WidgetExtension objects for custom schema handling.
    *                     Custom extensions are checked before built-in ones.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(registry: WidgetRegistry, extensions?: WidgetExtension<any>[]) {
-    this.extensions = [...builtinExtensions, ...(extensions ?? [])];
-    this.registry = { ...registry };
-    for (const ext of extensions ?? []) {
+
+  constructor(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    extensions?: WidgetExtension<any>[],
+    mapErrorMessage?: (output?: Output) => string | undefined,
+  ) {
+    this.registry = {};
+    this.extensions = extensions || [];
+    // register all extensions' components
+    for (const ext of this.extensions) {
       this.registry[ext.type] = ext.component;
     }
+    this.mapErrorMessage = mapErrorMessage || extractErrorMessage;
   }
 
   /**
@@ -109,22 +117,35 @@ export class SimpleFieldRenderer {
    * Iterates through all extensions (custom first, then built-in) to find a match.
    */
   private resolveWidget = (props: FormFieldRenderProps): WidgetTypeProps => {
-    const baseProps = parseBaseWidgetProps(props, this.registry, this.render);
+    const { schema, runtime } = props;
+    const widgetProps: WidgetProps = {
+      label: schema.title || props.instanceLocation.split("/").pop() || "",
+      description: schema.description,
+      disabled: !!schema.readOnly,
+      error: this.mapErrorMessage(props.error),
+      schema,
+      registry: this.registry,
+      renderChild: (child: FieldNode): React.ReactNode => (
+        <FormField
+          key={child.instanceLocation}
+          path={child.instanceLocation}
+          runtime={runtime}
+          render={this.render}
+        />
+      ),
+      value: props.value,
+      onChange: props.onChange,
+    };
 
     for (const ext of this.extensions) {
-      const widgetTypeProps = ext.parse(props, baseProps);
-      if (widgetTypeProps) {
-        return widgetTypeProps;
+      if (ext.match?.(props)) {
+        return [
+          ext.type,
+          ext.mapProps ? ext.mapProps(props, widgetProps) : widgetProps,
+        ];
       }
     }
-    return [
-      "unknown",
-      {
-        ...baseProps,
-        value: props.value,
-        onChange: props.onChange,
-      } as WidgetProps,
-    ];
+    return ["unknown", widgetProps as UnknownWidgetProps];
   };
 
   /**
@@ -140,35 +161,6 @@ export class SimpleFieldRenderer {
     return <Component {...widgetProps} />;
   };
 }
-
-const parseBaseWidgetProps = (
-  props: FormFieldRenderProps,
-  registry: WidgetRegistry,
-  render: (props: FormFieldRenderProps) => React.ReactNode,
-): WidgetProps => {
-  const { schema, runtime } = props;
-  const label = schema.title || props.jsonPointer.split("/").pop() || "";
-  const disabled = !!schema.readOnly;
-
-  const renderChild = (child: FieldNode): React.ReactNode => (
-    <FormField
-      key={child.jsonPointer}
-      path={child.jsonPointer}
-      runtime={runtime}
-      render={render}
-    />
-  );
-
-  return {
-    label,
-    description: schema.description,
-    disabled,
-    error: extractErrorMessage(props.error),
-    schema,
-    registry,
-    renderChild,
-  };
-};
 
 function extractErrorMessage(output?: Output): string | undefined {
   if (!output || output.valid) return undefined;

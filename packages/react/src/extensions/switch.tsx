@@ -6,15 +6,14 @@ export interface SwitchWidgetProps extends WidgetProps {
 }
 
 /** Switch widget extension - handles boolean types */
-export const switchExtension = defineExtension<SwitchWidgetProps>(
-  "switch",
-  (() => null) as React.ComponentType<SwitchWidgetProps>,
-  {
+export const switchExtension = (
+  component: React.ComponentType<SwitchWidgetProps>,
+) =>
+  defineExtension<SwitchWidgetProps>("switch", component, {
     match: (props) => props.type === "boolean",
     mapProps: (props, base) => ({
       ...base,
       value: !!props.value,
       onChange: props.onChange,
     }),
-  },
-);
+  });

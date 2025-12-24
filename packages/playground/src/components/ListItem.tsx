@@ -67,7 +67,11 @@ export const ListItem = forwardRef<HTMLDivElement, ListItemProps>(
             </Text>
           )}
           {showDelete && (
-            <IconButton size="small" colorVariant="danger" onClick={onDelete}>
+            <IconButton
+              size="small"
+              colorVariant="danger"
+              onClick={() => onDelete && onDelete()}
+            >
               <DeleteIcon fontSize="small" />
             </IconButton>
           )}

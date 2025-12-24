@@ -7,10 +7,10 @@ export interface SelectWidgetProps extends WidgetProps {
 }
 
 /** Select widget extension - handles enum types */
-export const selectExtension = defineExtension<SelectWidgetProps>(
-  "select",
-  (() => null) as React.ComponentType<SelectWidgetProps>,
-  {
+export const selectExtension = (
+  component: React.ComponentType<SelectWidgetProps>,
+) =>
+  defineExtension<SelectWidgetProps>("select", component, {
     match: (props) => Array.isArray(props.schema.enum),
     mapProps: (props, base) => ({
       ...base,
@@ -18,5 +18,4 @@ export const selectExtension = defineExtension<SelectWidgetProps>(
       onChange: props.onChange,
       options: props.schema.enum || [],
     }),
-  },
-);
+  });

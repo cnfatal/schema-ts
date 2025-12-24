@@ -1,22 +1,25 @@
 import {
   type FieldNode,
   Schema,
+  type SchemaChangeEvent,
   SchemaRuntime,
   Validator,
+  deepEqual,
 } from "@schema-ts/core";
 import {
   type FC,
   type ReactNode,
-  memo,
+  useCallback,
   useEffect,
   useMemo,
-  useReducer,
+  useState,
   useSyncExternalStore,
 } from "react";
 
 export type RenderFormField = (props: FormFieldRenderProps) => ReactNode;
 
 export interface FormFieldRenderProps extends FieldNode {
+  value: unknown;
   runtime: SchemaRuntime;
   onChange: (val: unknown) => void;
 }
@@ -27,39 +30,42 @@ export interface FormFieldProps {
   render?: RenderFormField;
 }
 
-const FormFieldComponent: FC<FormFieldProps> = ({ runtime, path, render }) => {
-  const [, forceUpdate] = useReducer((x) => x + 1, 0);
-  useEffect(() => {
-    const unsubscribe = runtime.subscribe(path, () => {
-      forceUpdate();
-    });
-    return unsubscribe;
-  }, [runtime, path]);
+export function FormField({ runtime, path, render }: FormFieldProps) {
+  // Get node reference once - node reference is stable across updates
+  const node = useMemo(() => runtime.findNode(path), [runtime, path]);
 
-  const node = runtime.findNode(path);
-  if (!node) return null;
+  // Stable subscribe callback
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => runtime.subscribe(path, onStoreChange),
+    [runtime, path],
+  );
 
-  const onChange = (val: unknown) => {
-    runtime.setValue(path, val);
-  };
+  // Get version directly from cached node reference
+  const version = useSyncExternalStore(subscribe, () => node?.version ?? -1);
 
-  const renderProps: FormFieldRenderProps = {
-    ...node,
-    runtime,
-    onChange,
-  };
+  const onChange = useCallback(
+    (val: unknown) => runtime.setValue(path, val),
+    [runtime, path],
+  );
 
-  if (render) {
-    return render(renderProps);
-  }
+  const renderProps = useMemo(
+    () =>
+      node
+        ? ({
+            ...node,
+            value: runtime.getValue(path),
+            runtime,
+            onChange,
+            version,
+          } as FormFieldRenderProps)
+        : null,
+    [node, version, runtime, onChange, path],
+  );
 
-  // Fallback if no render is provided?
-  // Ideally Form should assume a default or the user provides one.
-  // For now return null or JSON dump.
-  return null;
-};
+  if (!renderProps) return null;
 
-export const FormField = memo(FormFieldComponent);
+  return render?.(renderProps) ?? null;
+}
 
 type FormProps = {
   schema: Schema;
@@ -76,21 +82,25 @@ export const Form: FC<FormProps> = ({
   validator,
   render,
 }) => {
-  const runtime = useMemo(() => {
-    return new SchemaRuntime(validator || new Validator(), schema, value);
-  }, [schema, value, validator]);
+  // Capture initial value only once at mount
+  const [initialValue] = useState(() => value);
 
-  // Subscribe to changes to trigger re-renders
-  useSyncExternalStore(
-    (onStoreChange) => {
-      return runtime.subscribe("#", onStoreChange);
-    },
-    () => runtime.getVersion(),
+  const runtime = useMemo(
+    () => new SchemaRuntime(validator || new Validator(), schema, initialValue),
+    [schema, validator, initialValue],
   );
+
+  // Sync external value to runtime (only when value actually differs)
+  useEffect(() => {
+    const currentValue = runtime.getValue("#");
+    if (!deepEqual(currentValue, value)) {
+      runtime.setValue("#", value);
+    }
+  }, [runtime, value]);
 
   useEffect(() => {
     if (onChange) {
-      return runtime.subscribe("#", (e) => {
+      return runtime.subscribeAll((e: SchemaChangeEvent) => {
         if (e.type === "value") {
           onChange(runtime.getValue("#"));
         }
@@ -99,11 +109,5 @@ export const Form: FC<FormProps> = ({
     return undefined;
   }, [runtime, onChange]);
 
-  return (
-    <FormField
-      path={runtime.root.jsonPointer}
-      runtime={runtime}
-      render={render}
-    />
-  );
+  return <FormField path={"#"} runtime={runtime} render={render} />;
 };

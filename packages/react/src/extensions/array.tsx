@@ -13,31 +13,36 @@ export interface ArrayWidgetProps extends WidgetProps {
 }
 
 /** Array widget extension - handles array types, uses renderChild for items */
-export const arrayExtension = defineExtension<ArrayWidgetProps>(
-  "array",
-  (() => null) as React.ComponentType<ArrayWidgetProps>,
-  {
+export const arrayExtension = (
+  component: React.ComponentType<ArrayWidgetProps>,
+) =>
+  defineExtension<ArrayWidgetProps>("array", component, {
     match: (props) => props.type === "array",
     mapProps: (props, base) => {
+      const { runtime, instanceLocation } = props;
+
+      // Helper to get fresh array value at execution time (avoids stale closures)
+      const getCurrentArray = (): unknown[] =>
+        (runtime.getValue(instanceLocation) as unknown[]) || [];
       const items =
-        props.children?.map((child, index) => ({
-          key: child.jsonPointer,
-          content: base.renderChild(child),
-          onRemove: () => {
-            const newValue = [...((props.value as unknown[]) || [])];
-            newValue.splice(index, 1);
-            props.runtime.setValue(props.jsonPointer, newValue);
-          },
-        })) || [];
+        props.children?.map((child, index) => {
+          return {
+            key: child.instanceLocation,
+            content: base.renderChild(child),
+            onRemove: () => {
+              const newValue = [...getCurrentArray()];
+              newValue.splice(index, 1);
+              runtime.setValue(instanceLocation, newValue);
+            },
+          };
+        }) || [];
 
       return {
         ...base,
         items,
         onAdd: () => {
-          const newValue = [...((props.value as unknown[]) || []), undefined];
-          props.runtime.setValue(props.jsonPointer, newValue);
+          runtime.setValue(instanceLocation, [...getCurrentArray(), undefined]);
         },
       };
     },
-  },
-);
+  });

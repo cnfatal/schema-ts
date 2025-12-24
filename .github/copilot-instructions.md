@@ -16,6 +16,8 @@ TypeScript monorepo for type-safe schema validation and UI form generation.
 
 ## Code Conventions
 
+- **Human Language**: Write comments and commit messages in English only.
+- **Compability**: Never consider backward compatibility, as all packages are in active development.
 - **TypeScript**: Use `import type` for type-only imports (`verbatimModuleSyntax`).
 - **Imports**: Use package names (e.g., `@schema-ts/core`), not relative paths between packages.
 - **React**: Use `useState`/`useCallback`. Clear field errors on value change.

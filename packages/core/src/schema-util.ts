@@ -431,10 +431,9 @@ export function resolveEffectiveSchema(
   keywordLocation: string,
   instanceLocation: string,
 ): {
-  schema: Schema;
+  effectiveSchema: Schema;
   type: SchemaType;
   error?: Output;
-  defaultValue?: unknown;
 } {
   // Schema is expected to be pre-dereferenced (all $refs resolved)
   let effective = schema;
@@ -456,7 +455,7 @@ export function resolveEffectiveSchema(
           `${keywordLocation}/then`,
           instanceLocation,
         );
-        effective = mergeSchema(effective, res.schema);
+        effective = mergeSchema(effective, res.effectiveSchema);
       }
     } else {
       if (effective.else) {
@@ -467,9 +466,12 @@ export function resolveEffectiveSchema(
           `${keywordLocation}/else`,
           instanceLocation,
         );
-        effective = mergeSchema(effective, res.schema);
+        effective = mergeSchema(effective, res.effectiveSchema);
       }
     }
+    // Remove if/then/else to prevent re-evaluation during shallow validation
+    const { if: _, then: __, else: ___, ...rest } = effective;
+    effective = rest;
   }
 
   // allOf
@@ -482,8 +484,11 @@ export function resolveEffectiveSchema(
         `${keywordLocation}/allOf/${index}`,
         instanceLocation,
       );
-      effective = mergeSchema(effective, res.schema);
+      effective = mergeSchema(effective, res.effectiveSchema);
     }
+    // Remove allOf to prevent re-evaluation during shallow validation
+    const { allOf: _, ...rest } = effective;
+    effective = rest;
   }
 
   // anyOf
@@ -503,10 +508,13 @@ export function resolveEffectiveSchema(
           keywordLocation + `/anyOf/` + index,
           instanceLocation,
         );
-        effective = mergeSchema(effective, res.schema);
+        effective = mergeSchema(effective, res.effectiveSchema);
         break;
       }
     }
+    // Remove anyOf to prevent re-evaluation during shallow validation
+    const { anyOf: _, ...rest } = effective;
+    effective = rest;
   }
 
   // oneOf
@@ -528,10 +536,10 @@ export function resolveEffectiveSchema(
     if (validCount === 1 && lastValidSchema) {
       effective = mergeSchema(effective, lastValidSchema);
     }
+    // Remove oneOf to prevent re-evaluation during shallow validation
+    const { oneOf: _, ...rest } = effective;
+    effective = rest;
   }
-
-  // default value
-  const defaultValue = effective.default;
 
   // type - determine the effective type for rendering purposes
   let type: SchemaType = "unknown";
@@ -560,10 +568,9 @@ export function resolveEffectiveSchema(
   );
 
   return {
-    schema: effective,
+    effectiveSchema: effective,
     type,
     error: validationOutput.valid ? undefined : validationOutput,
-    defaultValue,
   };
 }
 

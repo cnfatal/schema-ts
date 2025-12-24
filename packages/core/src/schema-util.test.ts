@@ -158,7 +158,7 @@ describe("resolveEffectiveSchema", () => {
   it("resolves simple schema", () => {
     const schema: Schema = { type: "string" };
     const res = resolveEffectiveSchema(validator, schema, "hello", "#", "");
-    expect(res.schema).toEqual(schema);
+    expect(res.effectiveSchema).toEqual(schema);
     expect(res.type).toBe("string");
     expect(res.error).toBeUndefined();
   });
@@ -171,7 +171,7 @@ describe("resolveEffectiveSchema", () => {
     };
     const value = { type: "A", value: "test" };
     const res = resolveEffectiveSchema(validator, schema, value, "#", "");
-    expect(res.schema.properties?.value).toEqual({ type: "string" });
+    expect(res.effectiveSchema.properties?.value).toEqual({ type: "string" });
   });
 
   it("resolves if-then-else (else case)", () => {
@@ -182,7 +182,7 @@ describe("resolveEffectiveSchema", () => {
     };
     const value = { type: "B", value: 123 };
     const res = resolveEffectiveSchema(validator, schema, value, "#", "");
-    expect(res.schema.properties?.value).toEqual({ type: "number" });
+    expect(res.effectiveSchema.properties?.value).toEqual({ type: "number" });
   });
 
   it("resolves allOf", () => {
@@ -193,8 +193,8 @@ describe("resolveEffectiveSchema", () => {
       ],
     };
     const res = resolveEffectiveSchema(validator, schema, {}, "#", "");
-    expect(res.schema.properties?.a).toBeDefined();
-    expect(res.schema.properties?.b).toBeDefined();
+    expect(res.effectiveSchema.properties?.a).toBeDefined();
+    expect(res.effectiveSchema.properties?.b).toBeDefined();
   });
 
   it("resolves anyOf", () => {
@@ -202,7 +202,7 @@ describe("resolveEffectiveSchema", () => {
       anyOf: [{ type: "string" }, { type: "number" }],
     };
     const res = resolveEffectiveSchema(validator, schema, "test", "#", "");
-    expect(res.schema.type).toBe("string");
+    expect(res.effectiveSchema.type).toBe("string");
   });
 
   it("handles type mismatch", () => {

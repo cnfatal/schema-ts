@@ -1,34 +1,56 @@
-import { WidgetExtension } from "../SimpleFieldRenderer";
+import { UnknownWidgetProps } from "../SimpleFieldRenderer";
 
-import { textExtension } from "./text";
-import { selectExtension } from "./select";
-import { switchExtension } from "./switch";
-import { arrayExtension } from "./array";
-import { objectExtension } from "./object";
+import { textExtension, TextWidgetProps } from "./text";
+import { numberExtension, NumberWidgetProps } from "./number";
+import { integerExtension, IntegerWidgetProps } from "./integer";
+import { selectExtension, SelectWidgetProps } from "./select";
+import { switchExtension, SwitchWidgetProps } from "./switch";
+import { arrayExtension, ArrayWidgetProps } from "./array";
+import { objectExtension, ObjectWidgetProps } from "./object";
 
 export type { TextWidgetProps } from "./text";
+export type { NumberWidgetProps } from "./number";
+export type { IntegerWidgetProps } from "./integer";
 export type { SelectWidgetProps } from "./select";
 export type { SwitchWidgetProps } from "./switch";
 export type { ArrayWidgetProps, ArrayItemProps } from "./array";
 export type { ObjectWidgetProps } from "./object";
 
 export { textExtension } from "./text";
+export { numberExtension } from "./number";
+export { integerExtension } from "./integer";
 export { selectExtension } from "./select";
 export { switchExtension } from "./switch";
 export { arrayExtension } from "./array";
 export { objectExtension } from "./object";
 
+export type BuiltinWidgetsRegistry = {
+  text: React.ComponentType<TextWidgetProps>;
+  number: React.ComponentType<NumberWidgetProps>;
+  integer: React.ComponentType<IntegerWidgetProps>;
+  select: React.ComponentType<SelectWidgetProps>;
+  switch: React.ComponentType<SwitchWidgetProps>;
+  array: React.ComponentType<ArrayWidgetProps>;
+  object: React.ComponentType<ObjectWidgetProps>;
+  unknown: React.ComponentType<UnknownWidgetProps>;
+};
+
 /**
  * Creates the built-in widget extensions.
- * These extensions handle the core widget types: text, select, switch, array, object.
+ * These extensions handle the core widget types: text, number, integer, select, switch, array, object.
  *
  * @returns Array of built-in extensions in priority order
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const builtinExtensions: WidgetExtension<any>[] = [
-  selectExtension,
-  switchExtension,
-  textExtension,
-  arrayExtension,
-  objectExtension,
-];
+export function createBuiltinExtensions(
+  builtinWidgets: BuiltinWidgetsRegistry,
+) {
+  return [
+    selectExtension(builtinWidgets.select),
+    switchExtension(builtinWidgets.switch),
+    numberExtension(builtinWidgets.number),
+    integerExtension(builtinWidgets.integer),
+    textExtension(builtinWidgets.text),
+    arrayExtension(builtinWidgets.array),
+    objectExtension(builtinWidgets.object),
+  ];
+}

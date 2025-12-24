@@ -6,10 +6,10 @@ export interface ObjectWidgetProps extends WidgetProps {
 }
 
 /** Object widget extension - handles object types, uses renderChild for properties */
-export const objectExtension = defineExtension<ObjectWidgetProps>(
-  "object",
-  (() => null) as React.ComponentType<ObjectWidgetProps>,
-  {
+export const objectExtension = (
+  component: React.ComponentType<ObjectWidgetProps>,
+) =>
+  defineExtension<ObjectWidgetProps>("object", component, {
     match: (props) => props.type === "object",
     mapProps: (props, base) => {
       const children =
@@ -20,5 +20,4 @@ export const objectExtension = defineExtension<ObjectWidgetProps>(
         children,
       };
     },
-  },
-);
+  });

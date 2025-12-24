@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import type { Schema } from "@schema-ts/core";
-import { Form, SimpleFieldRenderer } from "@schema-ts/react";
+import { createSimpleFieldRenderer, Form } from "@schema-ts/react";
 import { load, dump } from "js-yaml";
 import { Editor } from "./Editor";
 import { muiWidgetRegistry } from "./widgets";
@@ -84,7 +84,7 @@ export const Playground = ({ examples }: { examples?: Example[] }) => {
   }, [valueStr]);
 
   const renderer = useMemo(
-    () => new SimpleFieldRenderer(muiWidgetRegistry, [XEnumExtension]),
+    () => createSimpleFieldRenderer(muiWidgetRegistry, [XEnumExtension]),
     [],
   );
 
