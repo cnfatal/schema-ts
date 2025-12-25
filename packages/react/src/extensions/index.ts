@@ -45,12 +45,19 @@ export function createBuiltinExtensions(
   builtinWidgets: BuiltinWidgetsRegistry,
 ) {
   return [
+    // enum come first, object with enum is treated as enum
     selectExtension(builtinWidgets.select),
-    switchExtension(builtinWidgets.switch),
-    numberExtension(builtinWidgets.number),
-    integerExtension(builtinWidgets.integer),
-    textExtension(builtinWidgets.text),
-    arrayExtension(builtinWidgets.array),
+    // type object is most commonly used
     objectExtension(builtinWidgets.object),
+    // type array
+    arrayExtension(builtinWidgets.array),
+    // type boolean
+    switchExtension(builtinWidgets.switch),
+    // type number
+    numberExtension(builtinWidgets.number),
+    // type integer
+    integerExtension(builtinWidgets.integer),
+    // type string
+    textExtension(builtinWidgets.text),
   ];
 }

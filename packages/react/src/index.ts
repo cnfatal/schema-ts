@@ -14,8 +14,10 @@ export function createSimpleFieldRenderer(
   mapErrorMessage?: (output?: Output) => string | undefined,
 ): SimpleFieldRenderer {
   const allextensions = [
-    ...createBuiltinExtensions(registry),
+    // custom extensions come first
     ...(extensions ?? []),
+    // built-in extensions come after
+    ...createBuiltinExtensions(registry),
   ];
   return new SimpleFieldRenderer(allextensions, mapErrorMessage);
 }
