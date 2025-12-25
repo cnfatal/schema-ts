@@ -19,6 +19,8 @@ export interface WidgetProps {
   // WidgetRegistry to components reuse
   registry: WidgetRegistry;
 
+  // default value from schema
+  defaultValue?: unknown;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   value: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -136,6 +138,7 @@ export class SimpleFieldRenderer {
         />
       ),
       value: props.value,
+      defaultValue: schema.default,
       onChange: props.onChange,
     };
 
