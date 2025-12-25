@@ -229,8 +229,10 @@ function normalizeGeneral(schema: Schema): void {
   }
 
   // Generic/OpenAPI: example: x -> examples: [x]
-  if ("example" in legacy && !("examples" in schema)) {
-    schema.examples = [legacy.example];
+  if ("example" in legacy) {
+    if (!("examples" in schema)) {
+      schema.examples = [legacy.example];
+    }
     delete legacy.example;
   }
 }

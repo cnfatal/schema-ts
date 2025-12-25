@@ -8,6 +8,7 @@ export interface WidgetProps {
   // also the title
   label: string;
   description?: string;
+  example?: unknown;
   required?: boolean;
   disabled?: boolean;
   error?: string;
@@ -121,6 +122,7 @@ export class SimpleFieldRenderer {
     const widgetProps: WidgetProps = {
       label: schema.title || props.instanceLocation.split("/").pop() || "",
       description: schema.description,
+      example: schema.examples?.[0],
       disabled: !!schema.readOnly,
       error: this.mapErrorMessage(props.error),
       schema,
