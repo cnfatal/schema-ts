@@ -1,6 +1,5 @@
 import type { Schema, SchemaType, Output } from "./type";
 import {
-  get,
   getJsonPointer,
   jsonPointerEscape,
   jsonPointerJoin,
@@ -95,7 +94,7 @@ export class SchemaRuntime {
     this.validator = validator;
     this.value = value;
     this.root = this.createEmptyNode("", "#");
-    this.buildNode(this.root, this.value, this.rootSchema);
+    this.buildNode(this.root, this.rootSchema);
   }
 
   /**
@@ -111,6 +110,32 @@ export class SchemaRuntime {
     instanceLocation: string,
   ): Set<string> {
     const deps = new Set<string>();
+
+    // Handle required
+    if (schema.required) {
+      for (const req of schema.required) {
+        deps.add(resolveAbsolutePath(instanceLocation, `/${req}`));
+      }
+    }
+
+    // Handle dependentRequired
+    if (schema.dependentRequired) {
+      for (const [prop, reqs] of Object.entries(schema.dependentRequired)) {
+        deps.add(resolveAbsolutePath(instanceLocation, `/${prop}`));
+        for (const req of reqs) {
+          deps.add(resolveAbsolutePath(instanceLocation, `/${req}`));
+        }
+      }
+    }
+
+    // Handle dependentSchemas
+    if (schema.dependentSchemas) {
+      for (const [prop, subSchema] of Object.entries(schema.dependentSchemas)) {
+        deps.add(resolveAbsolutePath(instanceLocation, `/${prop}`));
+        const subDeps = this.collectDependencies(subSchema, instanceLocation);
+        subDeps.forEach((d) => deps.add(d));
+      }
+    }
 
     // Handle if-then-else
     if (schema.if) {
@@ -256,11 +281,7 @@ export class SchemaRuntime {
     }
 
     // Build node from target path
-    this.buildNode(
-      targetNode,
-      this.getValue(targetNode.instanceLocation),
-      targetNode.originalSchema,
-    );
+    this.buildNode(targetNode, targetNode.originalSchema);
   }
 
   /**
@@ -360,7 +381,7 @@ export class SchemaRuntime {
     this.rootSchema = dereferenceSchemaDeep(normalized, normalized);
     // Reinitialize root node with new schema
     this.root = this.createEmptyNode("", "#");
-    this.buildNode(this.root, this.getValue(ROOT_PATH), this.rootSchema);
+    this.buildNode(this.root, this.rootSchema);
     this.notify({ type: "schema", path: ROOT_PATH });
   }
 
@@ -559,7 +580,6 @@ export class SchemaRuntime {
    */
   private buildNode(
     node: FieldNode,
-    value: unknown,
     schema?: Schema,
     options: {
       skipDependencyRegistration?: boolean;
@@ -567,6 +587,16 @@ export class SchemaRuntime {
     } = {},
   ): void {
     const { keywordLocation, instanceLocation } = node;
+
+    const value = this.getValue(instanceLocation);
+    if (value === undefined) {
+      // If value is undefined, set to default from schema
+      const defaultValue = getDefaultValue(schema || node.originalSchema);
+      // Update value variable for further processing
+      // Note: setValue will trigger a separate buildNode call, so we return here
+      this.setValue(instanceLocation, defaultValue);
+      return;
+    }
 
     // Circular update protection
     if (this.updatingNodes.has(instanceLocation)) {
@@ -580,7 +610,9 @@ export class SchemaRuntime {
     this.updatingNodes.add(instanceLocation);
 
     // Only recalculate dependencies when originalSchema changes
-    if (schema && !deepEqual(schema, node.originalSchema)) {
+    const schemaChanged =
+      schema !== undefined && !deepEqual(schema, node.originalSchema);
+    if (schemaChanged) {
       node.originalSchema = schema;
       const dependencies = this.collectDependencies(
         node.originalSchema,
@@ -606,9 +638,11 @@ export class SchemaRuntime {
       keywordLocation,
       instanceLocation,
     );
+
     // record changes
     const effectiveSchemaChanged =
       !deepEqual(effectiveSchema, node.schema) || type !== node.type;
+
     const errorChanged = !deepEqual(error, node.error);
 
     node.schema = effectiveSchema;
@@ -647,8 +681,7 @@ export class SchemaRuntime {
       // Set canRemove for this child
       childNode.canRemove = canRemove;
       // recursively build child node
-      const childValue = get(value, [childKey]);
-      this.buildNode(childNode, childValue, childSchema, options);
+      this.buildNode(childNode, childSchema, options);
       newChildren.push(childNode);
     };
 
@@ -780,12 +813,10 @@ export class SchemaRuntime {
     if (dependentNodes) {
       for (const dependentNode of dependentNodes) {
         // Don't pass schema - only value changed, not originalSchema
-        this.buildNode(
-          dependentNode,
-          this.getValue(dependentNode.instanceLocation),
-          undefined,
-          { ...options, updatedNodes },
-        );
+        this.buildNode(dependentNode, undefined, {
+          ...options,
+          updatedNodes,
+        });
       }
     }
   }

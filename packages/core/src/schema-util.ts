@@ -376,6 +376,11 @@ export function extractReferencedPaths(
     "maxLength",
     "pattern",
     "format",
+    "minItems",
+    "maxItems",
+    "uniqueItems",
+    "minProperties",
+    "maxProperties",
   ];
   for (const constraint of valueConstraints) {
     if (
@@ -387,7 +392,32 @@ export function extractReferencedPaths(
     }
   }
 
-  // 7. Nested conditions - recursive handling
+  // 7. required
+  if (schema.required) {
+    for (const req of schema.required) {
+      paths.push(basePath ? `${basePath}/${req}` : `/${req}`);
+    }
+  }
+
+  // 8. dependentRequired
+  if (schema.dependentRequired) {
+    for (const [prop, reqs] of Object.entries(schema.dependentRequired)) {
+      paths.push(basePath ? `${basePath}/${prop}` : `/${prop}`);
+      for (const req of reqs) {
+        paths.push(basePath ? `${basePath}/${req}` : `/${req}`);
+      }
+    }
+  }
+
+  // 9. dependentSchemas
+  if (schema.dependentSchemas) {
+    for (const [prop, subSchema] of Object.entries(schema.dependentSchemas)) {
+      paths.push(basePath ? `${basePath}/${prop}` : `/${prop}`);
+      paths.push(...extractReferencedPaths(subSchema, basePath, depth + 1));
+    }
+  }
+
+  // 10. Nested conditions - recursive handling
   if (schema.if) {
     paths.push(...extractReferencedPaths(schema.if, basePath, depth + 1));
   }

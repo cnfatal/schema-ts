@@ -3,6 +3,11 @@ import { userProfileSchema, userProfileValue } from "./userProfile";
 import { simpleLoginSchema, simpleLoginValue } from "./simpleLogin";
 import { appConfigSchema, appConfigValue } from "./appConfig";
 import { dynamicFieldsSchema, dynamicFieldsValue } from "./dynamicFields";
+import {
+  nestedIfThenElseSchema,
+  nestedIfThenElseValue,
+} from "./nestedIfThenElse";
+import { cloudResourceSchema, cloudResourceValue } from "./cloudResource";
 
 export interface Example {
   name: string;
@@ -30,5 +35,15 @@ export const examples: Example[] = [
     name: "Dynamic Fields",
     schema: dynamicFieldsSchema,
     value: dynamicFieldsValue,
+  },
+  {
+    name: "Nested Conditional (Shipping)",
+    schema: nestedIfThenElseSchema,
+    value: nestedIfThenElseValue,
+  },
+  {
+    name: "Cloud Resource (Nested)",
+    schema: cloudResourceSchema,
+    value: cloudResourceValue,
   },
 ];
