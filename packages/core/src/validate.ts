@@ -196,7 +196,10 @@ export class Validator {
           keywordLocation: `${keywordLocation}/const`,
           instanceLocation,
           errors: [],
-          error: this.formatError({ key: "validation.const" }),
+          error: this.formatError({
+            key: "validation.const",
+            params: { value: schema.const },
+          }),
         });
         if (fastFail) return output;
       }

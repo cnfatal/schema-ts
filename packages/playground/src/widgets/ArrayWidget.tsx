@@ -12,6 +12,7 @@ export function DefaultArrayWidget({
   required,
   error,
   items,
+  canAdd,
   onAdd,
 }: ArrayWidgetProps) {
   return (
@@ -22,19 +23,25 @@ export function DefaultArrayWidget({
       error={error}
       compactDescription
       headerAction={
-        <Button
-          startIcon={<AddIcon />}
-          variant="contained"
-          size="small"
-          onClick={onAdd}
-        >
-          Add
-        </Button>
+        canAdd && (
+          <Button
+            startIcon={<AddIcon />}
+            variant="contained"
+            size="small"
+            onClick={onAdd}
+          >
+            Add
+          </Button>
+        )
       }
     >
       <Flex direction="column" gap={2} sx={{ mt: 1 }}>
         {items?.map((item, index) => (
-          <ListItem key={item.key} index={index} onDelete={item.onRemove}>
+          <ListItem
+            key={item.key}
+            index={index}
+            onDelete={item.canRemove ? item.onRemove : undefined}
+          >
             {item.content}
           </ListItem>
         ))}

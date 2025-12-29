@@ -203,7 +203,7 @@ describe("Notify System", () => {
       // updateSchema notifies on "#" which normalizes to ""
       runtime.subscribe("", (e) => (eventType = e.type));
 
-      runtime.updateSchema({ type: "number" });
+      runtime.setSchema({ type: "number" });
 
       expect(eventType).toBe("schema");
     });
@@ -261,7 +261,7 @@ describe("Notify System", () => {
       const v2 = runtime.getVersion();
       expect(v2).toBeGreaterThan(v1);
 
-      runtime.updateSchema({
+      runtime.setSchema({
         type: "object",
         properties: {
           a: { type: "string" },

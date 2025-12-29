@@ -125,7 +125,7 @@ export class SimpleFieldRenderer {
       label: schema.title || props.instanceLocation.split("/").pop() || "",
       description: schema.description,
       example: schema.examples?.[0],
-      disabled: !!schema.readOnly,
+      disabled: !!schema.readOnly || schema.const !== undefined,
       error: this.mapErrorMessage(props.error),
       schema,
       registry: this.registry,
@@ -138,7 +138,7 @@ export class SimpleFieldRenderer {
         />
       ),
       value: props.value,
-      defaultValue: schema.default,
+      defaultValue: schema.default ?? schema.const,
       onChange: props.onChange,
     };
 

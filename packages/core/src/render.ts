@@ -5,6 +5,7 @@ import {
   jsonPointerEscape,
   jsonPointerJoin,
   setJsonPointer,
+  removeJsonPointer,
   deepEqual,
   resolveAbsolutePath,
   parseJsonPointer,
@@ -14,6 +15,8 @@ import {
   extractReferencedPaths,
   resolveEffectiveSchema,
   dereferenceSchemaDeep,
+  getDefaultValue,
+  getSubSchema,
 } from "./schema-util";
 import { normalizeSchema } from "./normalize";
 import type { Validator } from "./validate";
@@ -33,6 +36,11 @@ export interface FieldNode {
   version: number;
   // Absolute paths this node's effective schema depends on
   dependencies?: Set<string>;
+
+  // Whether this node can be removed (array items, additionalProperties, patternProperties)
+  canRemove: boolean;
+  // Whether this node can have children added (arrays with items, objects with additionalProperties)
+  canAdd: boolean;
 }
 
 /** The canonical representation for root path */
@@ -68,6 +76,18 @@ export class SchemaRuntime {
   private version: number = 0;
   private rootSchema: Schema = {};
 
+  /**
+   * Create a new SchemaRuntime instance.
+   *
+   * @param validator - The validator instance for schema validation
+   * @param schema - The JSON Schema definition (will be normalized and dereferenced)
+   * @param value - The initial data value to manage
+   *
+   * @example
+   * const validator = new Validator();
+   * const schema = { type: "object", properties: { name: { type: "string" } } };
+   * const runtime = new SchemaRuntime(validator, schema, { name: "Alice" });
+   */
   constructor(validator: Validator, schema: Schema | unknown, value: unknown) {
     const normalized = normalizeSchema(schema);
 
@@ -215,6 +235,9 @@ export class SchemaRuntime {
       instanceLocation,
       keywordLocation,
       originalSchema: {},
+      canRemove: false,
+      canAdd: false,
+      children: [],
     };
   }
 
@@ -233,8 +256,6 @@ export class SchemaRuntime {
     }
 
     // Build node from target path
-    // Pass originalSchema to trigger dependency calculation on initial build
-    // buildNode will handle updating dependent nodes automatically
     this.buildNode(
       targetNode,
       this.getValue(targetNode.instanceLocation),
@@ -242,10 +263,31 @@ export class SchemaRuntime {
     );
   }
 
+  /**
+   * Get the current version number.
+   * The version increments on every notify call (value, schema, or error changes).
+   * Useful for detecting if the runtime state has changed.
+   *
+   * @returns The current version number
+   */
   getVersion(): number {
     return this.version;
   }
 
+  /**
+   * Subscribe to changes at a specific path.
+   * The callback is invoked when the value, schema, or error at the path changes.
+   *
+   * @param path - The JSON Pointer path to watch (e.g., "/user/name", "" for root)
+   * @param cb - Callback function invoked with the change event
+   * @returns Unsubscribe function to remove the listener
+   *
+   * @example
+   * const unsubscribe = runtime.subscribe("/name", (event) => {
+   *   console.log(`${event.type} changed at ${event.path}`);
+   * });
+   * // Later: unsubscribe();
+   */
   subscribe(path: string, cb: (e: SchemaChangeEvent) => void): () => void {
     const normalizedPath = normalizeRootPath(path);
     if (!this.watchers[normalizedPath]) {
@@ -266,6 +308,10 @@ export class SchemaRuntime {
 
   /**
    * Subscribe to all events in the runtime.
+   * The callback is invoked for any change at any path.
+   *
+   * @param cb - Callback function invoked with every change event
+   * @returns Unsubscribe function to remove the listener
    */
   subscribeAll(cb: (e: SchemaChangeEvent) => void): () => void {
     this.globalWatchers.add(cb);
@@ -274,6 +320,12 @@ export class SchemaRuntime {
     };
   }
 
+  /**
+   * Emit a change event to all relevant subscribers.
+   * Increments the version number and notifies both path-specific and global watchers.
+   *
+   * @param event - The change event containing type and path
+   */
   notify(event: SchemaChangeEvent) {
     this.version++;
 
@@ -303,29 +355,132 @@ export class SchemaRuntime {
    * Update the entire schema.
    * This triggers a full rebuild of the node tree while preserving the current value.
    */
-  updateSchema(schema: Schema | unknown): void {
+  setSchema(schema: Schema | unknown): void {
     const normalized = normalizeSchema(schema);
     this.rootSchema = dereferenceSchemaDeep(normalized, normalized);
     // Reinitialize root node with new schema
-    this.root = {
-      instanceLocation: "",
-      keywordLocation: "#",
-      schema: this.rootSchema,
-      originalSchema: {},
-      type: "null",
-      dependencies: new Set(),
-      version: 0,
-    };
+    this.root = this.createEmptyNode("", "#");
     this.buildNode(this.root, this.getValue(ROOT_PATH), this.rootSchema);
     this.notify({ type: "schema", path: ROOT_PATH });
   }
 
+  /**
+   * Get the value at a specific path.
+   *
+   * @param path - The JSON Pointer path (e.g., "/user/name", "" for root)
+   * @returns The value at the path, or undefined if not found
+   *
+   * @example
+   * runtime.getValue(""); // returns entire root value
+   * runtime.getValue("/name"); // returns value at /name
+   */
   getValue(path: string): unknown {
     const normalizedPath = normalizeRootPath(path);
     if (normalizedPath === ROOT_PATH) return this.value;
     return getJsonPointer(this.value, normalizedPath);
   }
 
+  /**
+   * Remove a node at the specified path.
+   * This deletes the value from the data structure (array splice or object delete).
+   * @param path - The path to remove
+   * @returns true if successful, false if the path cannot be removed
+   */
+  removeValue(path: string): boolean {
+    const normalizedPath = normalizeRootPath(path);
+    if (normalizedPath === ROOT_PATH) {
+      // Cannot remove root
+      return false;
+    }
+
+    // Check if the node exists and can be removed
+    const node = this.findNode(normalizedPath);
+    if (!node || !node.canRemove) {
+      return false;
+    }
+
+    // Remove the value
+    const success = removeJsonPointer(this.value, normalizedPath);
+    if (!success) {
+      return false;
+    }
+
+    // Find parent path for reconciliation
+    const lastSlash = normalizedPath.lastIndexOf("/");
+    const parentPath =
+      lastSlash <= 0 ? ROOT_PATH : normalizedPath.substring(0, lastSlash);
+
+    // Reconcile from parent to rebuild children
+    this.reconcile(parentPath);
+    this.notify({ type: "value", path: parentPath });
+    return true;
+  }
+
+  /**
+   * Add a new child to an array or object at the specified parent path.
+   * For arrays, appends a new item with default value based on items schema.
+   * For objects, adds a new property with the given key and default value based on additionalProperties schema.
+   * @param parentPath - The path to the parent array or object
+   * @param key - For objects: the property key. For arrays: optional, ignored (appends to end)
+   * @returns true if successful, false if cannot add
+   */
+  addValue(parentPath: string, key?: string): boolean {
+    const normalizedPath = normalizeRootPath(parentPath);
+    const parentNode = this.findNode(normalizedPath);
+
+    if (!parentNode || !parentNode.canAdd) {
+      return false;
+    }
+
+    const parentValue = this.getValue(normalizedPath);
+    const parentSchema = parentNode.schema;
+
+    if (parentNode.type === "array" && Array.isArray(parentValue)) {
+      // Add new item to array
+      const newIndex = parentValue.length;
+      const { schema: subschema } = getSubSchema(
+        parentSchema,
+        String(newIndex),
+      );
+      const defaultValue = getDefaultValue(subschema);
+      const itemPath = jsonPointerJoin(normalizedPath, String(newIndex));
+      return this.setValue(itemPath, defaultValue);
+    } else if (
+      parentNode.type === "object" &&
+      parentValue &&
+      typeof parentValue === "object"
+    ) {
+      // Add new property to object
+      if (!key) {
+        return false;
+      }
+      const { schema: subschema } = getSubSchema(parentSchema, key);
+      // For new keys, getSubSchema returns additionalProperties schema or empty
+      // If no additionalProperties, cannot add
+      if (!parentSchema.additionalProperties) {
+        return false;
+      }
+      const defaultValue = getDefaultValue(subschema);
+      const propertyPath = jsonPointerJoin(normalizedPath, key);
+      return this.setValue(propertyPath, defaultValue);
+    }
+
+    return false;
+  }
+
+  /**
+   * Set the value at a specific path.
+   * Creates intermediate containers (objects/arrays) as needed.
+   * Triggers reconciliation and notifies subscribers.
+   *
+   * @param path - The JSON Pointer path (e.g., "/user/name", "" for root)
+   * @param value - The new value to set
+   * @returns true if successful, false if the path cannot be set
+   *
+   * @example
+   * runtime.setValue("/name", "Bob"); // set name to "Bob"
+   * runtime.setValue("", { name: "Alice" }); // replace entire root value
+   */
   setValue(path: string, value: unknown): boolean {
     const normalizedPath = normalizeRootPath(path);
 
@@ -343,11 +498,17 @@ export class SchemaRuntime {
     return true;
   }
 
-  getSchema(path: string): Schema {
-    const node = this.findNode(path);
-    return node ? node.schema : {};
-  }
-
+  /**
+   * Find the FieldNode at a specific path.
+   * Returns the node tree representation that includes schema, type, error, and children.
+   *
+   * @param path - The JSON Pointer path (e.g., "/user/name", "" for root)
+   * @returns The FieldNode at the path, or undefined if not found
+   *
+   * @example
+   * const node = runtime.findNode("/name");
+   * console.log(node?.schema, node?.type, node?.error);
+   */
   findNode(path: string): FieldNode | undefined {
     const normalizedPath = normalizeRootPath(path);
     // Handle root node queries
@@ -372,7 +533,7 @@ export class SchemaRuntime {
     return current;
   }
 
-  findNearestExistingNode(path: string): FieldNode | undefined {
+  private findNearestExistingNode(path: string): FieldNode | undefined {
     const normalizedPath = normalizeRootPath(path);
     let currentPath = normalizedPath;
 
@@ -393,7 +554,7 @@ export class SchemaRuntime {
    * Updates the node's schema, type, error, and children based on the current value.
    * @param schema - Optional. If provided, updates node.originalSchema. Otherwise uses existing.
    */
-  buildNode(
+  private buildNode(
     node: FieldNode,
     value: unknown,
     schema?: Schema,
@@ -466,6 +627,7 @@ export class SchemaRuntime {
       childKey: string,
       childSchema: Schema,
       childkeywordLocation: string,
+      canRemove: boolean = false,
     ) => {
       const childinstanceLocation = jsonPointerJoin(instanceLocation, childKey);
       // Reuse or create child node
@@ -479,6 +641,8 @@ export class SchemaRuntime {
           childkeywordLocation,
         );
       }
+      // Set canRemove for this child
+      childNode.canRemove = canRemove;
       // recursively build child node
       const childValue = get(value, [childKey]);
       this.buildNode(childNode, childValue, childSchema, options);
@@ -491,15 +655,20 @@ export class SchemaRuntime {
           value && typeof value === "object" ? Object.keys(value) : [];
         const processedKeys = new Set<string>();
 
+        // Set canAdd based on additionalProperties
+        node.canAdd = !!effectiveSchema.additionalProperties;
+
         if (effectiveSchema.properties) {
           for (const [key, subschema] of Object.entries(
             effectiveSchema.properties,
           )) {
             processedKeys.add(key);
+            // Regular properties cannot be removed
             processChild(
               key,
               subschema,
               `${keywordLocation}/properties/${key}`,
+              false,
             );
           }
         }
@@ -511,32 +680,42 @@ export class SchemaRuntime {
             for (const key of valueKeys) {
               if (safeRegexTest(pattern, key) && !processedKeys.has(key)) {
                 processedKeys.add(key);
+                // patternProperties can be removed
                 processChild(
                   key,
                   subschema,
                   `${keywordLocation}/patternProperties/${jsonPointerEscape(pattern)}`,
+                  true,
                 );
               }
             }
           }
         }
 
-        if (effectiveSchema.additionalProperties !== undefined) {
-          if (typeof effectiveSchema.additionalProperties === "object") {
-            for (const key of valueKeys) {
-              if (!processedKeys.has(key)) {
-                processChild(
-                  key,
-                  effectiveSchema.additionalProperties,
-                  `${keywordLocation}/additionalProperties`,
-                );
-              }
+        if (effectiveSchema.additionalProperties) {
+          const subschema =
+            typeof effectiveSchema.additionalProperties === "object"
+              ? effectiveSchema.additionalProperties
+              : {};
+
+          for (const key of valueKeys) {
+            if (!processedKeys.has(key)) {
+              // additionalProperties can be removed
+              processChild(
+                key,
+                subschema,
+                `${keywordLocation}/additionalProperties`,
+                true,
+              );
             }
           }
         }
         break;
       }
       case "array": {
+        // Set canAdd based on items schema
+        node.canAdd = !!effectiveSchema.items;
+
         if (Array.isArray(value)) {
           let prefixItemsLength = 0;
           if (effectiveSchema.prefixItems) {
@@ -546,20 +725,24 @@ export class SchemaRuntime {
               i < Math.min(value.length, prefixItemsLength);
               i++
             ) {
+              // prefixItems cannot be removed (they are fixed positions)
               processChild(
                 String(i),
                 effectiveSchema.prefixItems[i],
                 `${keywordLocation}/prefixItems/${i}`,
+                false,
               );
             }
           }
 
           if (effectiveSchema.items && value.length > prefixItemsLength) {
             for (let i = prefixItemsLength; i < value.length; i++) {
+              // items can be removed
               processChild(
                 String(i),
                 effectiveSchema.items,
                 `${keywordLocation}/items`,
+                true,
               );
             }
           }

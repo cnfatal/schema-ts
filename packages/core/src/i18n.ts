@@ -8,7 +8,7 @@ export const MESSAGES: Record<string, string> = {
   "validation.anyOf": "must match at least one schema",
   "validation.oneOf": "must match exactly one schema, matched {count}",
   "validation.not": "must not match schema",
-  "validation.const": "must be equal to constant",
+  "validation.const": "must be equal to {value}",
   "validation.enum": "must be equal to one of the allowed values",
   "validation.type": "must be {expected}",
   "validation.maximum": "must be <= {value}",
@@ -51,7 +51,9 @@ export const defaultErrorFormatter: ErrorFormatter = (msg) => {
 
   let result = template;
   for (const [k, v] of Object.entries(msg.params)) {
-    result = result.replace(`{${k}}`, String(v));
+    const value =
+      typeof v === "object" && v !== null ? JSON.stringify(v) : String(v);
+    result = result.replace(`{${k}}`, value);
   }
   return result;
 };

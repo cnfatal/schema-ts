@@ -61,6 +61,57 @@ export function getJsonPointer(obj: unknown, jsonPointer: string): unknown {
   return get(obj, parseJsonPointer(jsonPointer));
 }
 
+export function removeJsonPointer(obj: unknown, jsonPointer: string): boolean {
+  const path = parseJsonPointer(jsonPointer);
+  if (path.length === 0) {
+    return false;
+  }
+  if (obj === null || obj === undefined) {
+    return false;
+  }
+
+  let current: unknown = obj;
+
+  for (let i = 0; i < path.length - 1; i++) {
+    const segment = path[i];
+    if (Array.isArray(current)) {
+      const idx = Number(segment);
+      if (isNaN(idx) || idx < 0 || idx >= current.length) {
+        return false;
+      }
+      current = current[idx];
+    } else if (typeof current === "object" && current !== null) {
+      if (!Object.hasOwn(current, segment)) {
+        return false;
+      }
+      current = (current as Record<string, unknown>)[segment];
+    } else {
+      return false;
+    }
+
+    if (current === null || current === undefined) {
+      return false;
+    }
+  }
+
+  const lastSegment = path[path.length - 1];
+  if (Array.isArray(current)) {
+    const idx = Number(lastSegment);
+    if (isNaN(idx) || idx < 0 || idx >= current.length) {
+      return false;
+    }
+    current.splice(idx, 1);
+    return true;
+  } else if (typeof current === "object" && current !== null) {
+    if (Object.hasOwn(current, lastSegment)) {
+      delete (current as Record<string, unknown>)[lastSegment];
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function setJsonPointer(
   obj: unknown,
   jsonPointer: string,

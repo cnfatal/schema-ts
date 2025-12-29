@@ -61,4 +61,39 @@ describe("Advanced Object Features", () => {
     const nodeExtra2 = runtime.findNode("/extra2");
     expect(nodeExtra2?.schema.type).toBe("number");
   });
+
+  it("supports additionalProperties as true", () => {
+    const schema: Schema = {
+      type: "object",
+      additionalProperties: true,
+    };
+    const value = {
+      foo: "bar",
+    };
+    const runtime = new SchemaRuntime(validator, schema, value);
+
+    const nodeFoo = runtime.findNode("/foo");
+    expect(nodeFoo).toBeTruthy();
+    expect(nodeFoo?.schema).toEqual({});
+  });
+
+  it("reconciles correctly when keys are added or removed", () => {
+    const schema: Schema = {
+      type: "object",
+      additionalProperties: { type: "string" },
+    };
+    const runtime = new SchemaRuntime(validator, schema, {});
+
+    expect(runtime.root.children?.length).toBe(0);
+
+    // Add key via setValue on child path
+    runtime.setValue("/newKey", "hello");
+    expect(runtime.root.children?.length).toBe(1);
+    expect(runtime.findNode("/newKey")?.schema.type).toBe("string");
+
+    // Remove key via setValue on parent path
+    runtime.setValue("", {});
+    expect(runtime.root.children?.length).toBe(0);
+    expect(runtime.findNode("/newKey")).toBeUndefined();
+  });
 });

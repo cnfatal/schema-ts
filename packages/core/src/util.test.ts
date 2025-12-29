@@ -6,6 +6,7 @@ import {
   getJsonPointer,
   parseJsonPointer,
   setJsonPointer,
+  removeJsonPointer,
   resolveAbsolutePath,
 } from "./util";
 
@@ -271,6 +272,61 @@ describe("setJsonPointer", () => {
     const doc: Record<string, any> = {};
     setJsonPointer(doc, "/", 5);
     expect(getJsonPointer(doc, "/")).toBe(5);
+  });
+});
+
+describe("removeJsonPointer", () => {
+  it("removes object property", () => {
+    const doc = { a: 1, b: 2 };
+    const res = removeJsonPointer(doc, "/a");
+    expect(res).toBe(true);
+    expect(doc).toEqual({ b: 2 });
+  });
+
+  it("removes nested object property", () => {
+    const doc = { a: { b: { c: 3 } } };
+    const res = removeJsonPointer(doc, "/a/b/c");
+    expect(res).toBe(true);
+    expect(doc).toEqual({ a: { b: {} } });
+  });
+
+  it("removes array element", () => {
+    const doc = { arr: [1, 2, 3] };
+    const res = removeJsonPointer(doc, "/arr/1");
+    expect(res).toBe(true);
+    expect(doc.arr).toEqual([1, 3]);
+  });
+
+  it("removes nested array element", () => {
+    const doc = { a: [{ b: 1 }, { b: 2 }] };
+    const res = removeJsonPointer(doc, "/a/0/b");
+    expect(res).toBe(true);
+    expect(doc.a[0]).toEqual({});
+  });
+
+  it("returns false for non-existent pointer", () => {
+    const doc = { a: 1 };
+    const res = removeJsonPointer(doc, "/b");
+    expect(res).toBe(false);
+    expect(doc).toEqual({ a: 1 });
+  });
+
+  it("returns false for intermediate non-existent path", () => {
+    const doc = { a: 1 };
+    const res = removeJsonPointer(doc, "/b/c");
+    expect(res).toBe(false);
+  });
+
+  it("returns false for empty pointer", () => {
+    const doc = { a: 1 };
+    const res = removeJsonPointer(doc, "");
+    expect(res).toBe(false);
+  });
+
+  it("returns false when removing from non-object/non-array", () => {
+    const doc = { a: 1 };
+    const res = removeJsonPointer(doc, "/a/b");
+    expect(res).toBe(false);
   });
 });
 

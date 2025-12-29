@@ -4,11 +4,13 @@ import { defineExtension, WidgetProps } from "../SimpleFieldRenderer";
 export interface ArrayItemProps {
   key: string;
   content: React.ReactNode;
+  canRemove: boolean;
   onRemove: () => void;
 }
 
 export interface ArrayWidgetProps extends WidgetProps {
   items: ArrayItemProps[];
+  canAdd: boolean;
   onAdd: () => void;
 }
 
@@ -21,18 +23,14 @@ export const arrayExtension = (
     mapProps: (props, base) => {
       const { runtime, instanceLocation } = props;
 
-      // Helper to get fresh array value at execution time (avoids stale closures)
-      const getCurrentArray = (): unknown[] =>
-        (runtime.getValue(instanceLocation) as unknown[]) || [];
       const items =
-        props.children?.map((child, index) => {
+        props.children?.map((child) => {
           return {
             key: child.instanceLocation,
             content: base.renderChild(child),
+            canRemove: child.canRemove,
             onRemove: () => {
-              const newValue = [...getCurrentArray()];
-              newValue.splice(index, 1);
-              runtime.setValue(instanceLocation, newValue);
+              runtime.removeValue(child.instanceLocation);
             },
           };
         }) || [];
@@ -40,8 +38,9 @@ export const arrayExtension = (
       return {
         ...base,
         items,
+        canAdd: props.canAdd,
         onAdd: () => {
-          runtime.setValue(instanceLocation, [...getCurrentArray(), undefined]);
+          runtime.addValue(instanceLocation);
         },
       };
     },

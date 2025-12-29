@@ -28,7 +28,7 @@ describe("Schema Update Scenarios", () => {
       },
     };
 
-    runtime.updateSchema(newSchema);
+    runtime.setSchema(newSchema);
 
     const node = runtime.findNode("/field");
     expect(node?.schema.type).toBe("number");
@@ -50,7 +50,7 @@ describe("Schema Update Scenarios", () => {
       if (e.type === "schema") called = true;
     });
 
-    runtime.updateSchema({ type: "number" });
+    runtime.setSchema({ type: "number" });
     expect(called).toBe(true);
   });
 
@@ -75,7 +75,7 @@ describe("Schema Update Scenarios", () => {
       properties: { a: { type: "string" }, b: { type: "string" } },
     };
 
-    runtime.updateSchema(schema2);
+    runtime.setSchema(schema2);
 
     expect(runtime.findNode("/b")).toBeTruthy();
     // In schema2, no condition, so no dependency on /a
