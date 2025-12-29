@@ -15,15 +15,19 @@ export const numberExtension = (
   component: React.ComponentType<NumberWidgetProps>,
 ) =>
   defineExtension<NumberWidgetProps>("number", component, {
-    match: (props) => props.type === "number",
-    mapProps: (props, base) => ({
-      ...base,
-      value: props.value as number | undefined,
-      onChange: props.onChange as (value: number) => void,
-      minimum: props.schema.minimum,
-      exclusiveMinimum: props.schema.exclusiveMinimum,
-      maximum: props.schema.maximum,
-      exclusiveMaximum: props.schema.exclusiveMaximum,
-      multipleOf: props.schema.multipleOf,
-    }),
+    matcher: (props, base) => {
+      if (props.type === "number") {
+        return {
+          ...base,
+          value: props.value as number | undefined,
+          onChange: props.onChange as (value: number) => void,
+          minimum: props.schema.minimum,
+          exclusiveMinimum: props.schema.exclusiveMinimum,
+          maximum: props.schema.maximum,
+          exclusiveMaximum: props.schema.exclusiveMaximum,
+          multipleOf: props.schema.multipleOf,
+        };
+      }
+      return undefined;
+    },
   });

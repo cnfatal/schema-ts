@@ -15,15 +15,19 @@ export const integerExtension = (
   component: React.ComponentType<IntegerWidgetProps>,
 ) =>
   defineExtension<IntegerWidgetProps>("integer", component, {
-    match: (props) => props.type === "integer",
-    mapProps: (props, base) => ({
-      ...base,
-      value: props.value as number | undefined,
-      onChange: props.onChange as (value: number) => void,
-      minimum: props.schema.minimum,
-      maximum: props.schema.maximum,
-      multipleOf: props.schema.multipleOf || 1,
-      exclusiveMinimum: props.schema.exclusiveMinimum,
-      exclusiveMaximum: props.schema.exclusiveMaximum,
-    }),
+    matcher: (props, base) => {
+      if (props.type === "integer") {
+        return {
+          ...base,
+          value: props.value as number | undefined,
+          onChange: props.onChange as (value: number) => void,
+          minimum: props.schema.minimum,
+          maximum: props.schema.maximum,
+          multipleOf: props.schema.multipleOf,
+          exclusiveMinimum: props.schema.exclusiveMinimum,
+          exclusiveMaximum: props.schema.exclusiveMaximum,
+        };
+      }
+      return undefined;
+    },
   });

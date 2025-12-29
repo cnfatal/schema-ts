@@ -3,9 +3,10 @@ import { defineExtension, WidgetProps } from "../SimpleFieldRenderer";
 
 export interface ArrayItemProps {
   key: string;
-  content: React.ReactNode;
-  canRemove: boolean;
-  onRemove: () => void;
+  // render the item content, options is passed to the widget
+  render: (options?: Record<string, unknown>) => React.ReactNode;
+  // when onRemove is not undefined, the item can be removed
+  onRemove?: () => void;
 }
 
 export interface ArrayWidgetProps extends WidgetProps {
@@ -19,29 +20,33 @@ export const arrayExtension = (
   component: React.ComponentType<ArrayWidgetProps>,
 ) =>
   defineExtension<ArrayWidgetProps>("array", component, {
-    match: (props) => props.type === "array",
-    mapProps: (props, base) => {
-      const { runtime, instanceLocation } = props;
+    matcher: (props, base) => {
+      if (props.type === "array") {
+        const { runtime, instanceLocation } = props;
 
-      const items =
-        props.children?.map((child) => {
-          return {
-            key: child.instanceLocation,
-            content: base.renderChild(child),
-            canRemove: child.canRemove,
-            onRemove: () => {
-              runtime.removeValue(child.instanceLocation);
-            },
-          };
-        }) || [];
+        const items =
+          props.children?.map((child) => {
+            return {
+              key: child.instanceLocation,
+              render: (options?: Record<string, unknown>) =>
+                base.renderChild(child.instanceLocation, options),
+              onRemove: child.canRemove
+                ? () => {
+                    runtime.removeValue(child.instanceLocation);
+                  }
+                : undefined,
+            };
+          }) || [];
 
-      return {
-        ...base,
-        items,
-        canAdd: props.canAdd,
-        onAdd: () => {
-          runtime.addValue(instanceLocation);
-        },
-      };
+        return {
+          ...base,
+          items,
+          canAdd: props.canAdd,
+          onAdd: () => {
+            runtime.addValue(instanceLocation);
+          },
+        };
+      }
+      return undefined;
     },
   });

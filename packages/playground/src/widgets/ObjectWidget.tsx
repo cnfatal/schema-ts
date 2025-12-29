@@ -20,15 +20,16 @@ export function DefaultObjectWidget({
   required,
   error,
   properties,
-  canAddProperty,
   onAddProperty,
 }: ObjectWidgetProps) {
   const [newPropKey, setNewPropKey] = useState("");
 
+  const canAddProperty = !!onAddProperty;
+
   const handleAdd = () => {
     const key = newPropKey.trim();
     if (key) {
-      onAddProperty(key);
+      onAddProperty?.(key);
       setNewPropKey("");
     }
   };
@@ -42,12 +43,8 @@ export function DefaultObjectWidget({
     >
       <Flex direction="column" gap={2} sx={{ mt: 1 }}>
         {properties?.map((prop) => (
-          <ListItem
-            key={prop.key}
-            onDelete={prop.canRemove ? prop.onRemove : undefined}
-            label={prop.key}
-          >
-            {prop.content}
+          <ListItem key={prop.key} onDelete={prop.onRemove} label={prop.key}>
+            {prop.render()}
           </ListItem>
         ))}
       </Flex>

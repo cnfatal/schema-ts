@@ -14,7 +14,7 @@ export type { IntegerWidgetProps } from "./integer";
 export type { SelectWidgetProps } from "./select";
 export type { SwitchWidgetProps } from "./switch";
 export type { ArrayWidgetProps, ArrayItemProps } from "./array";
-export type { ObjectWidgetProps } from "./object";
+export type { ObjectWidgetProps, ObjectPropertyProps } from "./object";
 
 export { textExtension } from "./text";
 export { numberExtension } from "./number";

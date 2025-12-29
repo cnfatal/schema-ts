@@ -1,5 +1,5 @@
 import React from "react";
-import { Schema, type FieldNode, type Output } from "@schema-ts/core";
+import { Schema, type Output } from "@schema-ts/core";
 import { FormField, FormFieldRenderProps } from "./Form";
 
 /** Schema-agnostic base props for all widgets */
@@ -14,10 +14,8 @@ export interface WidgetProps {
   error?: string;
 
   // the schema for the field being rendered
+  instanceLocation: string;
   schema: Schema;
-
-  // WidgetRegistry to components reuse
-  registry: WidgetRegistry;
 
   // default value from schema
   defaultValue?: unknown;
@@ -26,11 +24,16 @@ export interface WidgetProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onChange: (value: any) => void;
 
-  renderChild: (child: FieldNode) => React.ReactNode;
+  // render child field
+  renderChild: RenderChild;
 
-  // Additional props specific to widget implementations
   [key: string]: unknown;
 }
+
+export type RenderChild = (
+  path: string,
+  options?: Record<string, unknown>,
+) => React.ReactNode;
 
 export type UnknownWidgetProps = WidgetProps & {
   value: unknown;
@@ -51,9 +54,7 @@ export interface WidgetExtension<T> {
   component: React.ComponentType<T>;
 
   /** Function to determine if this extension matches given FormFieldRenderProps */
-  match?: (props: FormFieldRenderProps) => boolean;
-  /** Function to map FormFieldRenderProps to the specific WidgetProps for this extension */
-  mapProps?: (props: FormFieldRenderProps, base: WidgetProps) => T;
+  matcher: (props: FormFieldRenderProps, base: WidgetProps) => T | undefined;
 }
 
 /**
@@ -63,11 +64,13 @@ export interface WidgetExtension<T> {
  * @example
  * ```typescript
  * const MyExtension = defineExtension("mywidget", MyWidget, {
- *   match: (props) => !!props.schema["x-custom"],
- *   mapProps: (props, base) => ({
- *     ...base,
- *     customProp: props.schema["x-custom"],
- *   }),
+ *   matcher: (props, base) => {
+ *     if (!props.schema["x-custom"]) return undefined;
+ *     return {
+ *       ...base,
+ *       customProp: props.schema["x-custom"],
+ *     };
+ *   },
  * });
  * ```
  */
@@ -75,15 +78,13 @@ export function defineExtension<T extends WidgetProps>(
   type: string,
   component: React.ComponentType<T>,
   options: {
-    match: (props: FormFieldRenderProps) => boolean;
-    mapProps: (props: FormFieldRenderProps, base: WidgetProps) => T;
+    matcher: (props: FormFieldRenderProps, base: WidgetProps) => T | undefined;
   },
 ): WidgetExtension<T> {
   return {
     type,
     component,
-    match: options.match,
-    mapProps: options.mapProps,
+    matcher: options.matcher,
   };
 }
 
@@ -120,34 +121,47 @@ export class SimpleFieldRenderer {
    * Iterates through all extensions (custom first, then built-in) to find a match.
    */
   private resolveWidget = (props: FormFieldRenderProps): WidgetTypeProps => {
-    const { schema, runtime } = props;
+    const {
+      schema,
+      runtime,
+      value,
+      error,
+      onChange,
+      instanceLocation,
+      ...otherProps
+    } = props;
     const widgetProps: WidgetProps = {
-      label: schema.title || props.instanceLocation.split("/").pop() || "",
+      label: schema.title || instanceLocation.split("/").pop() || "",
       description: schema.description,
       example: schema.examples?.[0],
       disabled: !!schema.readOnly || schema.const !== undefined,
-      error: this.mapErrorMessage(props.error),
+      error: this.mapErrorMessage(error),
+      instanceLocation,
       schema,
-      registry: this.registry,
-      renderChild: (child: FieldNode): React.ReactNode => (
-        <FormField
-          key={child.instanceLocation}
-          path={child.instanceLocation}
-          runtime={runtime}
-          render={this.render}
-        />
-      ),
-      value: props.value,
+      renderChild: (
+        path: string,
+        options?: Record<string, unknown>,
+      ): React.ReactNode => {
+        return (
+          <FormField
+            key={path}
+            path={path}
+            runtime={runtime}
+            render={this.render}
+            {...options}
+          />
+        );
+      },
+      value,
       defaultValue: schema.default ?? schema.const,
-      onChange: props.onChange,
+      onChange,
+      ...otherProps,
     };
 
     for (const ext of this.extensions) {
-      if (ext.match?.(props)) {
-        return [
-          ext.type,
-          ext.mapProps ? ext.mapProps(props, widgetProps) : widgetProps,
-        ];
+      const result = ext.matcher(props, widgetProps);
+      if (result) {
+        return [ext.type, result];
       }
     }
     return ["unknown", widgetProps as UnknownWidgetProps];

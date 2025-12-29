@@ -11,11 +11,15 @@ export const selectExtension = (
   component: React.ComponentType<SelectWidgetProps>,
 ) =>
   defineExtension<SelectWidgetProps>("select", component, {
-    match: (props) => Array.isArray(props.schema.enum),
-    mapProps: (props, base) => ({
-      ...base,
-      value: props.value,
-      onChange: props.onChange,
-      options: props.schema.enum || [],
-    }),
+    matcher: (props, base) => {
+      if (Array.isArray(props.schema.enum)) {
+        return {
+          ...base,
+          value: props.value,
+          onChange: props.onChange,
+          options: props.schema.enum || [],
+        };
+      }
+      return undefined;
+    },
   });

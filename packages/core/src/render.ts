@@ -422,9 +422,10 @@ export class SchemaRuntime {
    * For objects, adds a new property with the given key and default value based on additionalProperties schema.
    * @param parentPath - The path to the parent array or object
    * @param key - For objects: the property key. For arrays: optional, ignored (appends to end)
+   * @param initialValue - Optional initial value to set. If not provided, uses default from schema.
    * @returns true if successful, false if cannot add
    */
-  addValue(parentPath: string, key?: string): boolean {
+  addValue(parentPath: string, key?: string, initialValue?: unknown): boolean {
     const normalizedPath = normalizeRootPath(parentPath);
     const parentNode = this.findNode(normalizedPath);
 
@@ -442,7 +443,8 @@ export class SchemaRuntime {
         parentSchema,
         String(newIndex),
       );
-      const defaultValue = getDefaultValue(subschema);
+      const defaultValue =
+        initialValue !== undefined ? initialValue : getDefaultValue(subschema);
       const itemPath = jsonPointerJoin(normalizedPath, String(newIndex));
       return this.setValue(itemPath, defaultValue);
     } else if (
@@ -460,7 +462,8 @@ export class SchemaRuntime {
       if (!parentSchema.additionalProperties) {
         return false;
       }
-      const defaultValue = getDefaultValue(subschema);
+      const defaultValue =
+        initialValue !== undefined ? initialValue : getDefaultValue(subschema);
       const propertyPath = jsonPointerJoin(normalizedPath, key);
       return this.setValue(propertyPath, defaultValue);
     }

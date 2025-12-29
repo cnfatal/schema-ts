@@ -65,20 +65,20 @@ function XEnumWidget(props: XEnumWidgetProps) {
  * ```
  */
 export const XEnumExtension = defineExtension("xenum", XEnumWidget, {
-  match: (props) => {
+  matcher: (props, base) => {
     const xenum = props.schema["x-enum"];
-    return Array.isArray(xenum);
-  },
-  mapProps: (props, base) => {
-    const xenum = props.schema["x-enum"] as { name: string; value: unknown }[];
-    return {
-      ...base,
-      value: props.value,
-      onChange: props.onChange,
-      options: xenum.map((option) => ({
-        label: option.name,
-        value: option.value,
-      })),
-    } as XEnumWidgetProps;
+    if (Array.isArray(xenum)) {
+      const xenumOptions = xenum as { name: string; value: unknown }[];
+      return {
+        ...base,
+        value: props.value,
+        onChange: props.onChange,
+        options: xenumOptions.map((option) => ({
+          label: option.name,
+          value: option.value,
+        })),
+      } as XEnumWidgetProps;
+    }
+    return undefined;
   },
 });

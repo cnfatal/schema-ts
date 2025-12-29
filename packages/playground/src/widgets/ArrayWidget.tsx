@@ -37,12 +37,8 @@ export function DefaultArrayWidget({
     >
       <Flex direction="column" gap={2} sx={{ mt: 1 }}>
         {items?.map((item, index) => (
-          <ListItem
-            key={item.key}
-            index={index}
-            onDelete={item.canRemove ? item.onRemove : undefined}
-          >
-            {item.content}
+          <ListItem key={item.key} index={index} onDelete={item.onRemove}>
+            {item.render({ label: "" })}
           </ListItem>
         ))}
       </Flex>

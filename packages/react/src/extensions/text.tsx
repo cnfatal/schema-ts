@@ -10,10 +10,14 @@ export const textExtension = (
   component: React.ComponentType<TextWidgetProps>,
 ) =>
   defineExtension<TextWidgetProps>("text", component, {
-    match: (props) => props.type === "string",
-    mapProps: (props, base) => ({
-      ...base,
-      value: props.value as string | undefined,
-      onChange: props.onChange as (value: string) => void,
-    }),
+    matcher: (props, base) => {
+      if (props.type === "string") {
+        return {
+          ...base,
+          value: props.value as string | undefined,
+          onChange: props.onChange as (value: string) => void,
+        };
+      }
+      return undefined;
+    },
   });

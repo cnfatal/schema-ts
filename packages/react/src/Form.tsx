@@ -16,21 +16,21 @@ import {
   useSyncExternalStore,
 } from "react";
 
-export type RenderFormField = (props: FormFieldRenderProps) => ReactNode;
-
 export interface FormFieldRenderProps extends FieldNode {
   value: unknown;
-  runtime: SchemaRuntime;
   onChange: (val: unknown) => void;
+  runtime: SchemaRuntime;
 }
 
 export interface FormFieldProps {
   runtime: SchemaRuntime;
+  // jsonpath to render
   path: string;
-  render?: RenderFormField;
+  // render call Component to render ui
+  render?: (props: FormFieldRenderProps) => ReactNode;
 }
 
-export function FormField({ runtime, path, render }: FormFieldProps) {
+export function FormField({ runtime, path, render, ...props }: FormFieldProps) {
   // Get node reference once - node reference is stable across updates
   const node = useMemo(() => runtime.findNode(path), [runtime, path]);
 
@@ -57,9 +57,10 @@ export function FormField({ runtime, path, render }: FormFieldProps) {
             runtime,
             onChange,
             version,
+            ...props,
           } as FormFieldRenderProps)
         : null,
-    [node, version, runtime, onChange, path],
+    [node, version, runtime, onChange, path, props],
   );
 
   if (!renderProps) return null;
@@ -67,12 +68,13 @@ export function FormField({ runtime, path, render }: FormFieldProps) {
   return render?.(renderProps) ?? null;
 }
 
-type FormProps = {
+export type FormProps = {
   schema: Schema;
   value?: unknown;
   onChange?: (value: unknown) => void;
   validator?: Validator;
-  render?: RenderFormField;
+  render?: (props: FormFieldRenderProps) => ReactNode;
+  [key: string]: unknown;
 };
 
 export const Form: FC<FormProps> = ({
@@ -81,7 +83,8 @@ export const Form: FC<FormProps> = ({
   onChange,
   validator,
   render,
-}) => {
+  ...props
+}: FormProps) => {
   // Capture initial value only once at mount
   const [initialValue] = useState(() => value);
 
@@ -109,5 +112,5 @@ export const Form: FC<FormProps> = ({
     return undefined;
   }, [runtime, onChange]);
 
-  return <FormField path={"#"} runtime={runtime} render={render} />;
+  return <FormField path={"#"} runtime={runtime} render={render} {...props} />;
 };
