@@ -6,3 +6,5 @@ export * from "./stringformat";
 export * from "./i18n";
 export * from "./version";
 export * from "./normalize";
+export * from "./dependency";
+export * from "./default";

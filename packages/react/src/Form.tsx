@@ -34,9 +34,15 @@ export function FormField({ runtime, path, render, ...props }: FormFieldProps) {
   // Get node reference once - node reference is stable across updates
   const node = useMemo(() => runtime.findNode(path), [runtime, path]);
 
-  // Stable subscribe callback
+  // Stable subscribe callback - only trigger re-render for value and schema changes
   const subscribe = useCallback(
-    (onStoreChange: () => void) => runtime.subscribe(path, onStoreChange),
+    (onStoreChange: () => void) =>
+      runtime.subscribe(path, (e: SchemaChangeEvent) => {
+        // TODO: limit to value/schema changes only?
+        if (e.type) {
+          onStoreChange();
+        }
+      }),
     [runtime, path],
   );
 

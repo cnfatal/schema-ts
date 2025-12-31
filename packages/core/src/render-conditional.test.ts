@@ -1234,4 +1234,266 @@ describe("Conditional Dependencies", () => {
       expect(runtime.findNode("/permissions")).toBeUndefined();
     });
   });
+
+  describe("Default values on branch switch", () => {
+    it("applies default values when switching to then branch", () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          mode: { type: "string" },
+        },
+        if: {
+          properties: { mode: { const: "advanced" } },
+        },
+        then: {
+          properties: {
+            extra: { type: "string", default: "default-extra" },
+            count: { type: "number", default: 42 },
+          },
+        },
+      };
+
+      const runtime = new SchemaRuntime(validator, schema, {
+        mode: "simple",
+      });
+
+      // Initially no extra/count in value
+      expect(runtime.getValue("/extra")).toBeUndefined();
+      expect(runtime.getValue("/count")).toBeUndefined();
+
+      // Switch to advanced mode
+      runtime.setValue("/mode", "advanced");
+
+      // Defaults should be applied
+      expect(runtime.getValue("/extra")).toBe("default-extra");
+      expect(runtime.getValue("/count")).toBe(42);
+    });
+
+    it("applies default values for required fields on branch switch", () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          type: { type: "string" },
+        },
+        if: {
+          properties: { type: { const: "A" } },
+        },
+        then: {
+          properties: {
+            valueA: { type: "string", default: "a-value" },
+          },
+          required: ["valueA"],
+        },
+        else: {
+          properties: {
+            valueB: { type: "number", default: 100 },
+          },
+          required: ["valueB"],
+        },
+      };
+
+      // Start with type B
+      const runtime = new SchemaRuntime(validator, schema, {
+        type: "B",
+      });
+
+      // else branch should apply default for valueB
+      expect(runtime.getValue("/valueB")).toBe(100);
+      expect(runtime.getValue("/valueA")).toBeUndefined();
+
+      // Switch to type A
+      runtime.setValue("/type", "A");
+
+      // then branch should apply default for valueA
+      expect(runtime.getValue("/valueA")).toBe("a-value");
+    });
+
+    it("does not overwrite existing values on branch switch", () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          mode: { type: "string" },
+        },
+        if: {
+          properties: { mode: { const: "advanced" } },
+        },
+        then: {
+          properties: {
+            setting: { type: "string", default: "default-setting" },
+          },
+        },
+      };
+
+      // Start with existing setting value
+      const runtime = new SchemaRuntime(validator, schema, {
+        mode: "simple",
+        setting: "custom-value",
+      });
+
+      // Switch to advanced mode
+      runtime.setValue("/mode", "advanced");
+
+      // Existing value should be preserved, not overwritten by default
+      expect(runtime.getValue("/setting")).toBe("custom-value");
+    });
+
+    it("applies nested object defaults on branch switch", () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          type: { type: "string" },
+        },
+        if: {
+          properties: { type: { const: "complex" } },
+        },
+        then: {
+          properties: {
+            config: {
+              type: "object",
+              properties: {
+                enabled: { type: "boolean", default: true },
+                name: { type: "string", default: "default-name" },
+              },
+              default: { enabled: true, name: "default-name" },
+            },
+          },
+        },
+      };
+
+      const runtime = new SchemaRuntime(validator, schema, {
+        type: "simple",
+      });
+
+      expect(runtime.getValue("/config")).toBeUndefined();
+
+      // Switch to complex type
+      runtime.setValue("/type", "complex");
+
+      // Default object should be applied
+      expect(runtime.getValue("/config")).toEqual({
+        enabled: true,
+        name: "default-name",
+      });
+    });
+
+    it("applies defaults on oneOf branch switch", () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          format: { type: "string", enum: ["email", "phone"] },
+        },
+        oneOf: [
+          {
+            properties: {
+              format: { const: "email" },
+              email: {
+                type: "string",
+                format: "email",
+                default: "user@example.com",
+              },
+            },
+          },
+          {
+            properties: {
+              format: { const: "phone" },
+              phone: { type: "string", default: "+1-000-000-0000" },
+            },
+          },
+        ],
+      };
+
+      const runtime = new SchemaRuntime(validator, schema, {
+        format: "email",
+      });
+
+      // email branch should apply default
+      expect(runtime.getValue("/email")).toBe("user@example.com");
+
+      // Switch to phone
+      runtime.setValue("/format", "phone");
+
+      // phone default should be applied
+      expect(runtime.getValue("/phone")).toBe("+1-000-000-0000");
+    });
+
+    it("applies defaults for shared property with different defaults in branches", () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          mode: { type: "string", enum: ["A", "B"] },
+        },
+        if: {
+          properties: { mode: { const: "A" } },
+        },
+        then: {
+          properties: {
+            config: { type: "string", default: "config-for-A" },
+          },
+        },
+        else: {
+          properties: {
+            config: { type: "string", default: "config-for-B" },
+          },
+        },
+      };
+
+      // Start with mode A
+      const runtime = new SchemaRuntime(validator, schema, {
+        mode: "A",
+      });
+
+      // config should have then branch default
+      expect(runtime.getValue("/config")).toBe("config-for-A");
+
+      // Switch to mode B
+      runtime.setValue("/mode", "B");
+
+      // config still has value from mode A, should not be overwritten
+      expect(runtime.getValue("/config")).toBe("config-for-A");
+
+      // Clear config and switch back to A
+      runtime.setValue("/config", undefined);
+      runtime.setValue("/mode", "A");
+
+      // Now config should get the new default since it was cleared
+      expect(runtime.getValue("/config")).toBe("config-for-A");
+    });
+
+    it("fills default when property value is cleared and schema changes", () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          type: { type: "string" },
+        },
+        if: {
+          properties: { type: { const: "premium" } },
+        },
+        then: {
+          properties: {
+            level: { type: "number", default: 10 },
+          },
+        },
+        else: {
+          properties: {
+            level: { type: "number", default: 1 },
+          },
+        },
+      };
+
+      const runtime = new SchemaRuntime(validator, schema, {
+        type: "basic",
+        level: 5,
+      });
+
+      // level has explicit value
+      expect(runtime.getValue("/level")).toBe(5);
+
+      // Clear level
+      runtime.setValue("/level", undefined);
+
+      // Switch to premium - should apply default since level is undefined
+      runtime.setValue("/type", "premium");
+      expect(runtime.getValue("/level")).toBe(10);
+    });
+  });
 });

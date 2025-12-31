@@ -9,14 +9,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.10.1",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-yaml": "^6.1.2",
+    "@codemirror/view": "^6.39.8",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
-    "@monaco-editor/react": "^4.7.0",
     "@mui/icons-material": "^7.3.6",
     "@mui/material": "^7.3.6",
     "@schema-ts/core": "workspace:*",
     "@schema-ts/react": "workspace:*",
     "@types/js-yaml": "^4.0.9",
+    "@uiw/react-codemirror": "^4.25.4",
     "js-yaml": "^4.1.1",
     "react": "^19.2.1",
     "react-dom": "^19.2.1"
