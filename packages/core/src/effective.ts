@@ -87,7 +87,6 @@ export function resolveEffectiveSchema(
           instanceLocation,
         );
         effective = mergeSchema(effective, res.effectiveSchema);
-        break;
       }
     }
     // Remove anyOf to prevent re-evaluation during shallow validation
@@ -182,6 +181,28 @@ function mergeSchemaArrays(a?: Schema[], b?: Schema[]): Schema[] | undefined {
   return [...a, ...b];
 }
 
+/**
+ * Merge schema maps (properties, patternProperties, etc.)
+ * Recursive merge for overlapping keys.
+ */
+function mergeSchemaMap(
+  base?: Record<string, Schema>,
+  override?: Record<string, Schema>,
+): Record<string, Schema> | undefined {
+  if (base === undefined) return override;
+  if (override === undefined) return base;
+
+  const merged = { ...base };
+  for (const [key, schema] of Object.entries(override)) {
+    if (merged[key]) {
+      merged[key] = mergeSchema(merged[key], schema);
+    } else {
+      merged[key] = schema;
+    }
+  }
+  return merged;
+}
+
 export function mergeSchema(base: Schema, override?: Schema): Schema {
   if (!override) return base;
 
@@ -218,20 +239,19 @@ export function mergeSchema(base: Schema, override?: Schema): Schema {
     };
   }
 
-  // properties: merge objects (override takes precedence)
-  if (base.properties || override.properties) {
-    merged.properties = {
-      ...base.properties,
-      ...override.properties,
-    };
+  // properties: merge objects (recursive merge for overlapping keys)
+  const mergedProperties = mergeSchemaMap(base.properties, override.properties);
+  if (mergedProperties !== undefined) {
+    merged.properties = mergedProperties;
   }
 
-  // patternProperties: merge objects
-  if (base.patternProperties || override.patternProperties) {
-    merged.patternProperties = {
-      ...base.patternProperties,
-      ...override.patternProperties,
-    };
+  // patternProperties: merge objects (recursive merge for overlapping patterns)
+  const mergedPatternProperties = mergeSchemaMap(
+    base.patternProperties,
+    override.patternProperties,
+  );
+  if (mergedPatternProperties !== undefined) {
+    merged.patternProperties = mergedPatternProperties;
   }
 
   // items: merge recursively
@@ -277,12 +297,13 @@ export function mergeSchema(base: Schema, override?: Schema): Schema {
   // Note: if both have if/then/else, the override's conditional logic replaces base's
   // This is intentional as conditional schemas are context-dependent
 
-  // dependentSchemas: merge objects
-  if (base.dependentSchemas || override.dependentSchemas) {
-    merged.dependentSchemas = {
-      ...base.dependentSchemas,
-      ...override.dependentSchemas,
-    };
+  // dependentSchemas: merge objects (recursive merge for overlapping keys)
+  const mergedDependentSchemas = mergeSchemaMap(
+    base.dependentSchemas,
+    override.dependentSchemas,
+  );
+  if (mergedDependentSchemas !== undefined) {
+    merged.dependentSchemas = mergedDependentSchemas;
   }
 
   // additionalProperties: override takes precedence
