@@ -1,6 +1,6 @@
 {
   "name": "@schema-ts/vue",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Vue form generator from schema",
   "author": "cnfatal",
   "license": "MIT",
