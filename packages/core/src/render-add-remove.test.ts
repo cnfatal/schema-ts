@@ -300,5 +300,119 @@ describe("Node Add/Remove Functionality", () => {
       const result = runtime.addValue("/nonexistent");
       expect(result).toBe(false);
     });
+
+    it("auto-initializes array container when value is undefined", () => {
+      const schema: Schema = {
+        type: "array",
+        items: { type: "string" },
+      };
+      const runtime = new SchemaRuntime(validator, schema, undefined);
+
+      expect(runtime.getValue("")).toBeUndefined();
+
+      const result = runtime.addValue("");
+      expect(result).toBe(true);
+      expect(runtime.getValue("")).toEqual([""]);
+      expect(runtime.root.children?.length).toBe(1);
+    });
+
+    it("auto-initializes object container when value is undefined", () => {
+      const schema: Schema = {
+        type: "object",
+        additionalProperties: { type: "number" },
+      };
+      const runtime = new SchemaRuntime(validator, schema, undefined);
+
+      expect(runtime.getValue("")).toBeUndefined();
+
+      const result = runtime.addValue("", "count");
+      expect(result).toBe(true);
+      expect(runtime.getValue("")).toEqual({ count: 0 });
+      expect(runtime.findNode("/count")).toBeTruthy();
+    });
+
+    it("auto-initializes nested array container when value is undefined", () => {
+      const schema: Schema = {
+        type: "object",
+        additionalProperties: {
+          type: "array",
+          items: { type: "string" },
+        },
+      };
+      const runtime = new SchemaRuntime(validator, schema, {});
+
+      // Add first additional property which is an array
+      const result1 = runtime.addValue("", "items");
+      expect(result1).toBe(true);
+      // The value should be an empty array (default for array type)
+      expect(runtime.getValue("/items")).toEqual([]);
+
+      // Now add to the nested array
+      const result2 = runtime.addValue("/items");
+      expect(result2).toBe(true);
+      expect(runtime.getValue("/items")).toEqual([""]);
+    });
+
+    it("auto-initializes nested object container when value is undefined", () => {
+      const schema: Schema = {
+        type: "object",
+        additionalProperties: {
+          type: "object",
+          additionalProperties: { type: "string" },
+        },
+      };
+      const runtime = new SchemaRuntime(validator, schema, {});
+
+      // Add first additional property which is an object
+      const result1 = runtime.addValue("", "config");
+      expect(result1).toBe(true);
+      // The value should be an empty object (default for object type)
+      expect(runtime.getValue("/config")).toEqual({});
+
+      // Now add to the nested object
+      const result2 = runtime.addValue("/config", "key1");
+      expect(result2).toBe(true);
+      expect(runtime.getValue("/config")).toEqual({ key1: "" });
+    });
+
+    it("returns false when value exists but type mismatches (array expected, got string)", () => {
+      const schema: Schema = {
+        type: "array",
+        items: { type: "string" },
+      };
+      // Value is a string but schema expects array
+      const runtime = new SchemaRuntime(validator, schema, "not an array");
+
+      const result = runtime.addValue("");
+      expect(result).toBe(false);
+      // Original value should be preserved
+      expect(runtime.getValue("")).toBe("not an array");
+    });
+
+    it("returns false when value exists but type mismatches (object expected, got number)", () => {
+      const schema: Schema = {
+        type: "object",
+        additionalProperties: { type: "string" },
+      };
+      // Value is a number but schema expects object
+      const runtime = new SchemaRuntime(validator, schema, 42);
+
+      const result = runtime.addValue("", "key");
+      expect(result).toBe(false);
+      // Original value should be preserved
+      expect(runtime.getValue("")).toBe(42);
+    });
+
+    it("auto-initializes when value is null", () => {
+      const schema: Schema = {
+        type: "array",
+        items: { type: "string" },
+      };
+      const runtime = new SchemaRuntime(validator, schema, null);
+
+      const result = runtime.addValue("");
+      expect(result).toBe(true);
+      expect(runtime.getValue("")).toEqual([""]);
+    });
   });
 });

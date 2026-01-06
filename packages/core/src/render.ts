@@ -297,6 +297,22 @@ export class SchemaRuntime {
   }
 
   /**
+   * Internal helper to set a value at a normalized path.
+   * Handles both root and non-root paths.
+   *
+   * @param normalizedPath - The normalized JSON Pointer path
+   * @param value - The value to set
+   * @returns true if successful, false if the path cannot be set
+   */
+  private setValueAtPath(normalizedPath: string, value: unknown): boolean {
+    if (normalizedPath === ROOT_PATH) {
+      this.value = value;
+      return true;
+    }
+    return setJsonPointer(this.value, normalizedPath, value);
+  }
+
+  /**
    * Remove a node at the specified path.
    * This deletes the value from the data structure (array splice or object delete).
    * @param path - The path to remove
@@ -349,8 +365,34 @@ export class SchemaRuntime {
       return false;
     }
 
-    const parentValue = this.getValue(normalizedPath);
+    let parentValue = this.getValue(normalizedPath);
     const parentSchema = parentNode.schema;
+
+    // Auto-initialize container only if value is undefined or null
+    // If value exists but type mismatches, return false (don't overwrite)
+    if (parentNode.type === "array") {
+      if (Array.isArray(parentValue)) {
+        // Value is already an array, proceed
+      } else if (parentValue === undefined || parentValue === null) {
+        // Initialize empty array
+        parentValue = [];
+        this.setValueAtPath(normalizedPath, parentValue);
+      } else {
+        // Value exists but is not an array, cannot add
+        return false;
+      }
+    } else if (parentNode.type === "object") {
+      if (parentValue && typeof parentValue === "object") {
+        // Value is already an object, proceed
+      } else if (parentValue === undefined || parentValue === null) {
+        // Initialize empty object
+        parentValue = {};
+        this.setValueAtPath(normalizedPath, parentValue);
+      } else {
+        // Value exists but is not an object, cannot add
+        return false;
+      }
+    }
 
     if (parentNode.type === "array" && Array.isArray(parentValue)) {
       // Add new item to array
@@ -375,7 +417,6 @@ export class SchemaRuntime {
       return true;
     } else if (
       parentNode.type === "object" &&
-      parentValue &&
       typeof parentValue === "object"
     ) {
       // Add new property to object
@@ -422,12 +463,8 @@ export class SchemaRuntime {
     const normalizedPath = normalizeRootPath(path);
 
     // Update value
-    if (normalizedPath === ROOT_PATH) {
-      this.value = value;
-    } else {
-      const success = setJsonPointer(this.value, normalizedPath, value);
-      if (!success) return false;
-    }
+    const success = this.setValueAtPath(normalizedPath, value);
+    if (!success) return false;
 
     // Reconcile and notify
     this.reconcile(normalizedPath);
