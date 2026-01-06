@@ -16,10 +16,13 @@ import {
   useSyncExternalStore,
 } from "react";
 
+export type FormMode = "create" | "edit";
+
 export interface FormFieldRenderProps extends FieldNode {
   value: unknown;
   onChange: (val: unknown) => void;
   runtime: SchemaRuntime;
+  mode?: FormMode;
 }
 
 export interface FormFieldProps {
@@ -80,6 +83,8 @@ export type FormProps = {
   onChange?: (value: unknown) => void;
   validator?: Validator;
   render?: (props: FormFieldRenderProps) => ReactNode;
+  /** Form mode: 'create' for new records, 'edit' for existing records */
+  mode?: FormMode;
   [key: string]: unknown;
 };
 

@@ -1,6 +1,25 @@
 import React from "react";
 import { Schema, type Output } from "@schema-ts/core";
-import { FormField, FormFieldRenderProps } from "./Form";
+import { FormField, FormFieldRenderProps, FormMode } from "./Form";
+
+/**
+ * Determines if a field should be disabled based on schema and form mode.
+ *
+ * Rules:
+ * - `readOnly: true` → always disabled
+ * - `const` is defined → always disabled (value is fixed)
+ * - `writeOnly: true` + edit mode → disabled (can only set on create)
+ *
+ * @param schema - The field's schema
+ * @param mode - Form mode: 'create' or 'edit'
+ * @returns true if the field should be disabled
+ */
+export function isFieldDisabled(schema: Schema, mode?: FormMode): boolean {
+  if (schema.readOnly) return true;
+  if (schema.const !== undefined) return true;
+  if (schema.writeOnly && mode === "edit") return true;
+  return false;
+}
 
 /** Schema-agnostic base props for all widgets */
 
@@ -128,13 +147,14 @@ export class SimpleFieldRenderer {
       error,
       onChange,
       instanceLocation,
+      mode,
       ...otherProps
     } = props;
     const widgetProps: WidgetProps = {
       label: schema.title || instanceLocation.split("/").pop() || "",
       description: schema.description,
       example: schema.examples?.[0],
-      disabled: !!schema.readOnly || schema.const !== undefined,
+      disabled: isFieldDisabled(schema, mode),
       error: this.mapErrorMessage(error),
       instanceLocation,
       schema,
