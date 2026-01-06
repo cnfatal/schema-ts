@@ -366,7 +366,13 @@ export class SchemaRuntime {
       const defaultValue =
         initialValue !== undefined ? initialValue : getDefaultValue(subschema);
       const itemPath = jsonPointerJoin(normalizedPath, String(newIndex));
-      return this.setValue(itemPath, defaultValue);
+      const success = setJsonPointer(this.value, itemPath, defaultValue);
+      if (!success) return false;
+
+      // Reconcile from parent to rebuild children
+      this.reconcile(normalizedPath);
+      this.notify({ type: "value", path: normalizedPath });
+      return true;
     } else if (
       parentNode.type === "object" &&
       parentValue &&
@@ -387,7 +393,13 @@ export class SchemaRuntime {
       const defaultValue =
         initialValue !== undefined ? initialValue : getDefaultValue(subschema);
       const propertyPath = jsonPointerJoin(normalizedPath, key);
-      return this.setValue(propertyPath, defaultValue);
+      const success = setJsonPointer(this.value, propertyPath, defaultValue);
+      if (!success) return false;
+
+      // Reconcile from parent to rebuild children
+      this.reconcile(normalizedPath);
+      this.notify({ type: "value", path: normalizedPath });
+      return true;
     }
 
     return false;
