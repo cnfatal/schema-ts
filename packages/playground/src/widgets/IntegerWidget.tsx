@@ -97,6 +97,7 @@ export function DefaultIntegerWidget({
   value,
   onChange,
   error,
+  registerRef,
   description,
   required,
   schema,
@@ -189,7 +190,7 @@ export function DefaultIntegerWidget({
   const displayError = localError || error;
 
   return (
-    <FormField>
+    <FormField ref={registerRef}>
       <TextField
         label={label}
         type="number"

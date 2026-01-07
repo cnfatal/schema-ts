@@ -10,11 +10,13 @@ export function DefaultSwitchWidget({
   value,
   onChange,
   error,
+  registerRef,
   description,
   required,
 }: SwitchWidgetProps) {
   return (
     <SwitchField
+      ref={registerRef}
       label={label}
       checked={!!value}
       onChange={onChange}

@@ -30,8 +30,9 @@ export interface FormFieldProps extends BoxProps {
 /**
  * Form field wrapper component
  * Provides unified margin and layout
+ * Supports scrollIntoView on container and focus on first focusable child
  */
-export const FormField = forwardRef<HTMLDivElement, FormFieldProps>(
+export const FormField = forwardRef<HTMLElement, FormFieldProps>(
   ({ sx, children, ...props }, ref) => {
     return (
       <Box ref={ref} sx={{ mb: 2, ...sx }} {...props}>

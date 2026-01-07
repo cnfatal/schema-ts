@@ -3,13 +3,19 @@ import { tokens } from "../theme";
 
 export interface SectionHeaderProps extends Omit<BoxProps, "title"> {
   title: string;
+  actions?: React.ReactNode;
 }
 
 /**
  * Section header component
  * Displays a section title with a decorative bar
  */
-export function SectionHeader({ title, sx, ...props }: SectionHeaderProps) {
+export function SectionHeader({
+  title,
+  actions,
+  sx,
+  ...props
+}: SectionHeaderProps) {
   return (
     <Box
       sx={{
@@ -43,6 +49,7 @@ export function SectionHeader({ title, sx, ...props }: SectionHeaderProps) {
         />
         {title}
       </Typography>
+      {actions && <Box>{actions}</Box>}
     </Box>
   );
 }

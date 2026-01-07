@@ -115,41 +115,52 @@ export interface SelectFieldProps {
  * Includes label, select box, and helper text
  * Consistent with TextField style
  */
-export function SelectField({
-  label,
-  value,
-  options,
-  onChange,
-  error,
-  description,
-  required,
-}: SelectFieldProps) {
-  const helperText = error || description;
+export const SelectField = forwardRef<HTMLDivElement, SelectFieldProps>(
+  (
+    {
+      label,
+      value,
+      options,
+      onChange,
+      error,
+      description,
+      required,
+    }: SelectFieldProps,
+    ref,
+  ) => {
+    const helperText = error || description;
 
-  return (
-    <FormControl fullWidth size="small" error={!!error} required={required}>
-      {label && <InputLabel shrink>{label}</InputLabel>}
-      <Select
-        value={String(value ?? "")}
-        label={label}
-        onChange={onChange}
-        displayEmpty
+    return (
+      <FormControl
+        ref={ref}
+        fullWidth
+        size="small"
+        error={!!error}
+        required={required}
       >
-        <SelectOption value="">
-          <Text variant="body2" color="text.disabled">
-            Select an option...
-          </Text>
-        </SelectOption>
-        {options.map((option) => (
-          <SelectOption key={String(option)} value={String(option)}>
-            {String(option)}
+        {label && <InputLabel shrink>{label}</InputLabel>}
+        <Select
+          value={String(value ?? "")}
+          label={label}
+          onChange={onChange}
+          displayEmpty
+        >
+          <SelectOption value="">
+            <Text variant="body2" color="text.disabled">
+              Select an option...
+            </Text>
           </SelectOption>
-        ))}
-      </Select>
-      {helperText && <FormHelperText>{helperText}</FormHelperText>}
-    </FormControl>
-  );
-}
+          {options.map((option) => (
+            <SelectOption key={String(option)} value={String(option)}>
+              {String(option)}
+            </SelectOption>
+          ))}
+        </Select>
+        {helperText && <FormHelperText>{helperText}</FormHelperText>}
+      </FormControl>
+    );
+  },
+);
 
 SelectField.displayName = "SelectField";
 

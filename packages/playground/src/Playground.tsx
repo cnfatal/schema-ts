@@ -1,6 +1,10 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import type { Schema } from "@schema-ts/core";
-import { createSimpleFieldRenderer, Form } from "@schema-ts/react";
+import {
+  createSimpleFieldRenderer,
+  Form,
+  type FormHandle,
+} from "@schema-ts/react";
 import { load, dump } from "js-yaml";
 import { Editor } from "./Editor";
 import { muiWidgetRegistry } from "./widgets";
@@ -40,6 +44,7 @@ export type Example = {
 };
 
 export const Playground = ({ examples }: { examples?: Example[] }) => {
+  const formRef = useRef<FormHandle>(null);
   const [schemaStr, setSchemaStr] = useState("");
   const [valueStr, setValueStr] = useState("");
 
@@ -188,12 +193,24 @@ export const Playground = ({ examples }: { examples?: Example[] }) => {
               sx={{ height: "100%", display: "flex", flexDirection: "column" }}
             >
               <PanelContainer>
-                <SectionHeader title="Real-time UI Preview" />
+                <SectionHeader
+                  title="Real-time UI Preview"
+                  actions={
+                    <Button
+                      variant="soft"
+                      size="small"
+                      onClick={() => formRef.current?.scrollToFirstError()}
+                    >
+                      Scroll to Error
+                    </Button>
+                  }
+                />
                 <Box
                   sx={{ flexGrow: 1, overflow: "auto", p: { xs: 2, md: 4 } }}
                 >
                   {schema ? (
                     <Form
+                      ref={formRef}
                       schema={schema}
                       value={parsedValue}
                       onChange={handleFormChange}

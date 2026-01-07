@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import { BoxProps, FormHelperText } from "@mui/material";
 
 import { tokens } from "../theme";
@@ -35,99 +36,107 @@ export interface FieldGroupProps extends BoxProps {
  * Field group container
  * Used for Object and Array types, providing a unified container style
  */
-export function FieldGroup({
-  label,
-  description,
-  required,
-  error,
-  headerAction,
-  compactDescription = false,
-  sx,
-  children,
-  ...props
-}: FieldGroupProps) {
-  return (
-    <Box
-      sx={{
-        mb: 2,
-        p: 1.5,
-        borderRadius: 1.5,
-        bgcolor: tokens.colors.background.subtle,
-        transition: "all 0.2s",
-        border: `1px solid ${tokens.colors.border.subtle}`,
-        "&:hover": {
-          bgcolor: tokens.colors.background.subtleHover,
-          borderColor: tokens.colors.border.primaryLight,
-        },
-        "& .MuiOutlinedInput-root": {
-          bgcolor: "transparent",
-        },
-        ...sx,
-      }}
-      {...props}
-    >
-      {/* Header: Title + Optional Action */}
-      {(label || headerAction) && (
-        <Flex
-          align="center"
-          justify="space-between"
-          sx={{ mb: compactDescription ? 2 : 1.5 }}
-        >
-          <Flex align="center" gap={1}>
-            <FieldIndicator />
-            <Box>
-              <Text
-                variant="subtitle1"
-                sx={{
-                  fontWeight: 700,
-                  color: "text.primary",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 0.5,
-                }}
-              >
-                {label}
-                {required && <RequiredMark />}
-              </Text>
-              {/* Compact Mode: Description shown on same line as title */}
-              {compactDescription && description && (
+export const FieldGroup = forwardRef<HTMLDivElement, FieldGroupProps>(
+  (
+    {
+      label,
+      description,
+      required,
+      error,
+      headerAction,
+      compactDescription = false,
+      sx,
+      children,
+      ...props
+    },
+    ref,
+  ) => {
+    return (
+      <Box
+        ref={ref}
+        sx={{
+          mb: 2,
+          p: 1.5,
+          borderRadius: 1.5,
+          bgcolor: tokens.colors.background.subtle,
+          transition: "all 0.2s",
+          border: `1px solid ${tokens.colors.border.subtle}`,
+          "&:hover": {
+            bgcolor: tokens.colors.background.subtleHover,
+            borderColor: tokens.colors.border.primaryLight,
+          },
+          "& .MuiOutlinedInput-root": {
+            bgcolor: "transparent",
+          },
+          ...sx,
+        }}
+        {...props}
+      >
+        {/* Header: Title + Optional Action */}
+        {(label || headerAction) && (
+          <Flex
+            align="center"
+            justify="space-between"
+            sx={{ mb: compactDescription ? 2 : 1.5 }}
+          >
+            <Flex align="center" gap={1}>
+              <FieldIndicator />
+              <Box>
                 <Text
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ display: "block" }}
+                  variant="subtitle1"
+                  sx={{
+                    fontWeight: 700,
+                    color: "text.primary",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 0.5,
+                  }}
                 >
-                  {description}
+                  {label}
+                  {required && <RequiredMark />}
                 </Text>
-              )}
-            </Box>
+                {/* Compact Mode: Description shown on same line as title */}
+                {compactDescription && description && (
+                  <Text
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block" }}
+                  >
+                    {description}
+                  </Text>
+                )}
+              </Box>
+            </Flex>
+            {headerAction}
           </Flex>
-          {headerAction}
-        </Flex>
-      )}
+        )}
 
-      {/* Non-compact Mode: Description on a separate line */}
-      {!compactDescription && description && (
-        <Text
-          variant="caption"
-          color="text.secondary"
-          sx={{ display: "block", mb: 1.5 }}
-        >
-          {description}
-        </Text>
-      )}
+        {/* Non-compact Mode: Description on a separate line */}
+        {!compactDescription && description && (
+          <Text
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: "block", mb: 1.5 }}
+          >
+            {description}
+          </Text>
+        )}
 
-      {/* Content Area */}
-      {children}
+        {/* Content Area */}
+        {children}
 
-      {/* Error Message */}
-      {error && (
-        <FormHelperText error sx={{ mt: 1.5, fontWeight: 500 }}>
-          {error}
-        </FormHelperText>
-      )}
-    </Box>
-  );
-}
+        {/* Error Message */}
+        {error && (
+          <FormHelperText error sx={{ mt: 1.5, fontWeight: 500 }}>
+            {error}
+          </FormHelperText>
+        )}
+      </Box>
+    );
+  },
+);
+
+FieldGroup.displayName = "FieldGroup";
 
 export type FieldIndicatorProps = BoxProps;
 
