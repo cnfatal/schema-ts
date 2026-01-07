@@ -32,6 +32,8 @@ export interface FormFieldProps {
   path: string;
   // render call Component to render ui
   render?: (props: FormFieldRenderProps) => ReactNode;
+  mode?: FormMode;
+  [key: string]: unknown;
 }
 
 export function FormField({ runtime, path, render, ...props }: FormFieldProps) {

@@ -31,6 +31,7 @@ export interface WidgetProps {
   required?: boolean;
   disabled?: boolean;
   error?: string;
+  mode?: FormMode;
 
   // the schema for the field being rendered
   instanceLocation: string;
@@ -156,6 +157,7 @@ export class SimpleFieldRenderer {
       example: schema.examples?.[0],
       disabled: isFieldDisabled(schema, mode),
       error: this.mapErrorMessage(error),
+      mode,
       instanceLocation,
       schema,
       renderChild: (
@@ -168,6 +170,7 @@ export class SimpleFieldRenderer {
             path={path}
             runtime={runtime}
             render={this.render}
+            mode={mode}
             {...options}
           />
         );
