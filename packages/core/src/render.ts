@@ -348,6 +348,34 @@ export class SchemaRuntime {
   }
 
   /**
+   * Internal method to remove a value at a path.
+   * Shared logic for removeValue and setValue(undefined).
+   * @param path - The normalized path to remove
+   * @param canRemove - Whether the removal is allowed (pre-checked by caller)
+   * @returns true if successful, false if removal failed
+   */
+  private removeValueInternal(path: string): boolean {
+    // Remove the value
+    const success = removeJsonPointer(this.value, path);
+    if (!success) {
+      return false;
+    }
+
+    // Find parent path
+    const lastSlash = path.lastIndexOf("/");
+    const parentPath =
+      lastSlash <= 0 ? ROOT_PATH : path.substring(0, lastSlash);
+
+    // Cleanup empty parent containers, returns the topmost parent path for reconciliation
+    const reconcilePath = this.cleanupEmptyContainers(parentPath);
+
+    // Reconcile from parent to rebuild children
+    this.reconcile(reconcilePath);
+    this.notify({ type: "value", path: reconcilePath });
+    return true;
+  }
+
+  /**
    * Remove a node at the specified path.
    * This deletes the value from the data structure (array splice or object delete).
    * After removal, may also remove empty parent containers based on removeEmptyContainers option.
@@ -367,24 +395,7 @@ export class SchemaRuntime {
       return false;
     }
 
-    // Remove the value
-    const success = removeJsonPointer(this.value, normalizedPath);
-    if (!success) {
-      return false;
-    }
-
-    // Find parent path
-    const lastSlash = normalizedPath.lastIndexOf("/");
-    const parentPath =
-      lastSlash <= 0 ? ROOT_PATH : normalizedPath.substring(0, lastSlash);
-
-    // Cleanup empty parent containers, returns the topmost parent path for reconciliation
-    const reconcilePath = this.cleanupEmptyContainers(parentPath);
-
-    // Reconcile from parent to rebuild children
-    this.reconcile(reconcilePath);
-    this.notify({ type: "value", path: reconcilePath });
-    return true;
+    return this.removeValueInternal(normalizedPath);
   }
 
   /**
@@ -564,16 +575,32 @@ export class SchemaRuntime {
    * Creates intermediate containers (objects/arrays) as needed.
    * Triggers reconciliation and notifies subscribers.
    *
+   * When value is undefined and the field is not required, the field will be
+   * removed from the parent container (similar to removeValue behavior).
+   *
    * @param path - The JSON Pointer path (e.g., "/user/name", "" for root)
-   * @param value - The new value to set
+   * @param value - The new value to set. If undefined and field is optional, removes the field.
    * @returns true if successful, false if the path cannot be set
    *
    * @example
    * runtime.setValue("/name", "Bob"); // set name to "Bob"
    * runtime.setValue("", { name: "Alice" }); // replace entire root value
+   * runtime.setValue("/optional", undefined); // remove optional field
    */
   setValue(path: string, value: unknown): boolean {
     const normalizedPath = normalizeRootPath(path);
+
+    // Handle undefined value: try to remove the field if it's optional
+    if (value === undefined && normalizedPath !== ROOT_PATH) {
+      const node = this.findNode(normalizedPath);
+
+      // If node exists and is not required, remove it
+      if (node && !node.isRequired) {
+        return this.removeValueInternal(normalizedPath);
+      }
+
+      // If node is required, fall through to set undefined as the value
+    }
 
     // Update value
     const success = this.setValueAtPath(normalizedPath, value);
