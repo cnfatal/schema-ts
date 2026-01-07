@@ -8,22 +8,83 @@ import {
   deepEqual,
 } from "@schema-ts/core";
 import {
-  type FC,
   type ReactNode,
+  forwardRef,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
+import {
+  type FieldDomRegistry,
+  type FormContextValue,
+  type FormMode,
+  FormContext,
+  useFormContext,
+  useFormSharedState,
+} from "./FormContext";
 
-export type FormMode = "create" | "edit";
+/**
+ * Imperative handle exposed by the Form component via ref.
+ * Allows external control of form behavior.
+ */
+export interface FormHandle {
+  /**
+   * Scroll to the first field with a validation error.
+   * @param options - Optional scroll behavior options
+   * @returns true if an error field was found and scrolled to, false otherwise
+   */
+  scrollToFirstError(options?: ScrollIntoViewOptions): boolean;
+}
+
+/**
+ * Find the first field node with a validation error (depth-first).
+ * @param node - The root node to start searching from
+ * @returns The instanceLocation path of the first error, or null if no errors
+ */
+function findFirstErrorPath(node: FieldNode): string | null {
+  // Check if this node has an error
+  if (node.error && !node.error.valid) {
+    // If this node has children, check if any child has an error first
+    // This ensures we find the deepest/most specific error
+    if (node.children && node.children.length > 0) {
+      for (const child of node.children) {
+        const childError = findFirstErrorPath(child);
+        if (childError !== null) {
+          return childError;
+        }
+      }
+    }
+    // No child errors, return this node's path
+    return node.instanceLocation;
+  }
+
+  // This node has no error, check children
+  if (node.children) {
+    for (const child of node.children) {
+      const childError = findFirstErrorPath(child);
+      if (childError !== null) {
+        return childError;
+      }
+    }
+  }
+
+  return null;
+}
 
 export interface FormFieldRenderProps extends FieldNode {
   value: unknown;
   onChange: (val: unknown) => void;
   runtime: SchemaRuntime;
   mode?: FormMode;
+  /**
+   * Ref callback to register the field's DOM element for scrollToFirstError.
+   * Pass this to the root element of your widget: `<div ref={registerRef}>...</div>`
+   */
+  registerRef: (element: HTMLElement | null) => void;
 }
 
 export interface FormFieldProps {
@@ -39,6 +100,11 @@ export interface FormFieldProps {
 export function FormField({ runtime, path, render, ...props }: FormFieldProps) {
   // Get node reference once - node reference is stable across updates
   const node = useMemo(() => runtime.findNode(path), [runtime, path]);
+
+  // Get context for registry and mode
+  const context = useFormContext();
+  const registry = context?.domRegistry ?? null;
+  const mode = props.mode ?? context?.mode;
 
   // Stable subscribe callback - only trigger re-render for value and schema changes
   const subscribe = useCallback(
@@ -60,6 +126,20 @@ export function FormField({ runtime, path, render, ...props }: FormFieldProps) {
     [runtime, path],
   );
 
+  // Create registerRef callback for DOM element registration
+  const instanceLocation = node?.instanceLocation ?? "";
+  const registerRef = useCallback(
+    (element: HTMLElement | null) => {
+      if (!registry) return;
+      if (element) {
+        registry.register(instanceLocation, element);
+      } else {
+        registry.unregister(instanceLocation);
+      }
+    },
+    [registry, instanceLocation],
+  );
+
   const renderProps = useMemo(
     () =>
       node
@@ -68,11 +148,13 @@ export function FormField({ runtime, path, render, ...props }: FormFieldProps) {
             value: runtime.getValue(path),
             runtime,
             onChange,
+            registerRef,
             version,
             ...props,
+            mode,
           } as FormFieldRenderProps)
         : null,
-    [node, version, runtime, onChange, path, props],
+    [node, version, runtime, onChange, registerRef, path, props, mode],
   );
 
   if (!renderProps) return null;
@@ -90,30 +172,85 @@ export type FormProps = {
   mode?: FormMode;
   /** Schema runtime options for controlling default value behavior */
   runtimeOptions?: SchemaRuntimeOptions;
-  [key: string]: unknown;
 };
 
-export const Form: FC<FormProps> = ({
-  schema,
-  value,
-  onChange,
-  validator,
-  render,
-  runtimeOptions,
-  ...props
-}: FormProps) => {
+export const Form = forwardRef<FormHandle, FormProps>(function Form(
+  props: FormProps,
+  ref,
+) {
+  const { schema, value, onChange, validator, render, runtimeOptions, mode } =
+    props;
+
   // Capture initial value only once at mount
   const [initialValue] = useState(() => value);
 
   const runtime = useMemo(
     () =>
       new SchemaRuntime(
-        validator || new Validator(),
+        validator ?? new Validator(),
         schema,
         initialValue,
         runtimeOptions,
       ),
     [schema, validator, initialValue, runtimeOptions],
+  );
+
+  // Create field DOM registry
+  const registryMapRef = useRef<Map<string, HTMLElement>>(new Map());
+  const domRegistry = useMemo<FieldDomRegistry>(
+    () => ({
+      register: (path: string, element: HTMLElement) => {
+        registryMapRef.current.set(path, element);
+      },
+      unregister: (path: string) => {
+        registryMapRef.current.delete(path);
+      },
+      get: (path: string) => registryMapRef.current.get(path),
+    }),
+    [],
+  );
+
+  // Shared state for communication between components
+  const formSharedState = useFormSharedState();
+
+  // Create form context value
+  const formContextValue = useMemo<FormContextValue>(
+    () => ({
+      runtime,
+      domRegistry,
+      mode,
+      formSharedState,
+    }),
+    [runtime, domRegistry, mode, formSharedState],
+  );
+
+  // Expose imperative handle
+  useImperativeHandle(
+    ref,
+    () => ({
+      scrollToFirstError: (
+        options: ScrollIntoViewOptions = {
+          behavior: "smooth",
+          block: "center",
+        },
+      ): boolean => {
+        const errorPath = findFirstErrorPath(runtime.root);
+        if (errorPath === null) {
+          return false;
+        }
+        const element = domRegistry.get(errorPath);
+        if (element) {
+          element.scrollIntoView(options);
+          // Try to focus the element if it's focusable
+          if (typeof element.focus === "function") {
+            element.focus();
+          }
+          return true;
+        }
+        return false;
+      },
+    }),
+    [runtime, domRegistry],
   );
 
   // Sync external value to runtime (only when value actually differs)
@@ -135,5 +272,9 @@ export const Form: FC<FormProps> = ({
     return undefined;
   }, [runtime, onChange]);
 
-  return <FormField path={"#"} runtime={runtime} render={render} {...props} />;
-};
+  return (
+    <FormContext.Provider value={formContextValue}>
+      <FormField path={"#"} runtime={runtime} render={render} />
+    </FormContext.Provider>
+  );
+});

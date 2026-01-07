@@ -1,6 +1,7 @@
 import React from "react";
 import { Schema, type Output } from "@schema-ts/core";
-import { FormField, FormFieldRenderProps, FormMode } from "./Form";
+import { FormField, FormFieldRenderProps } from "./Form";
+import { FormMode } from "./FormContext";
 
 /**
  * Determines if a field should be disabled based on schema and form mode.
@@ -32,6 +33,10 @@ export interface WidgetProps {
   disabled?: boolean;
   error?: string;
   mode?: FormMode;
+  /**
+   * Ref callback to register the field's DOM element for scrolling to errors.
+   */
+  registerRef: (element: HTMLElement | null) => void;
 
   // the schema for the field being rendered
   instanceLocation: string;
@@ -170,7 +175,6 @@ export class SimpleFieldRenderer {
             path={path}
             runtime={runtime}
             render={this.render}
-            mode={mode}
             {...options}
           />
         );

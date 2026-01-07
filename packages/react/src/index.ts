@@ -3,6 +3,7 @@ import { BuiltinWidgetsRegistry, createBuiltinExtensions } from "./extensions";
 import { WidgetExtension, SimpleFieldRenderer } from "./SimpleFieldRenderer";
 
 export * from "./Form";
+export * from "./FormContext";
 export * from "./hooks";
 export * from "./SimpleFieldRenderer";
 export * from "./extensions";
