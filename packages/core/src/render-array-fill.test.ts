@@ -141,7 +141,7 @@ describe("Array auto-fill behavior", () => {
     expect(runtime.getValue("/metadata")).toBeUndefined();
   });
 
-  it("should auto-fill array ONLY when parent object is initialized (explicit mode)", () => {
+  it("should NOT auto-fill nested defaults when parent is set at runtime (explicit mode)", () => {
     const schema: Schema = {
       type: "object",
       properties: {
@@ -169,13 +169,19 @@ describe("Array auto-fill behavior", () => {
     expect(runtime.getValue("")).toEqual({});
     expect(runtime.getValue("/metadata")).toBeUndefined();
 
-    // Initialize parent object
+    // Initialize parent object at runtime
     runtime.setValue("/metadata", {});
 
-    // Now default should be applied (applySchemaDefaults)
-    // Actually, this depends on when applySchemaDefaults is triggered
+    // In explicit mode, defaults are only applied at initialization time, not at runtime
+    // So even though labels has a default, it won't be filled when parent is set later
     const metadataValue = runtime.getValue("/metadata");
-    console.log("metadata after init:", metadataValue);
+    expect(metadataValue).toEqual({});
+    expect(runtime.getValue("/metadata/labels")).toBeUndefined();
+
+    // Verify the full value structure
+    expect(runtime.getValue("")).toEqual({
+      metadata: {},
+    });
   });
 
   it("should auto-fill type defaults in 'always' mode", () => {
@@ -241,5 +247,71 @@ describe("Array auto-fill behavior", () => {
     expect(runtime.getValue("")).toEqual({
       tags: ["tag1"],
     });
+  });
+
+  it("should NOT show validation error for undefined optional property", () => {
+    const schema: Schema = {
+      type: "object",
+      properties: {
+        foo: { type: "array", items: { type: "string" } },
+      },
+    };
+
+    // Empty object with array property defined but not set
+    const runtime = new SchemaRuntime(
+      validator,
+      schema,
+      {},
+      { autoFillDefaults: "explicit" },
+    );
+
+    // Value should be empty
+    expect(runtime.getValue("")).toEqual({});
+    expect(runtime.getValue("/foo")).toBeUndefined();
+
+    // Check validation on root node - should pass since 'foo' is optional
+    const rootNode = runtime.findNode("");
+    expect(rootNode).toBeTruthy();
+    expect(rootNode?.error).toBeUndefined(); // No required validation error on parent
+
+    // Check foo node - since it's optional and undefined, no validation error
+    const fooNode = runtime.findNode("/foo");
+    expect(fooNode).toBeTruthy();
+    expect(fooNode?.error).toBeUndefined(); // Optional properties skip validation when undefined
+  });
+
+  it("should show validation error when array property is required but missing", () => {
+    const schema: Schema = {
+      type: "object",
+      properties: {
+        foo: { type: "array", items: { type: "string" } },
+      },
+      required: ["foo"],
+    };
+
+    // Empty object with required array property
+    const runtime = new SchemaRuntime(
+      validator,
+      schema,
+      {},
+      { autoFillDefaults: "explicit" },
+    );
+
+    // Value should be empty
+    expect(runtime.getValue("")).toEqual({});
+    expect(runtime.getValue("/foo")).toBeUndefined();
+
+    // Check validation on root node - should fail because required property is missing
+    const rootNode = runtime.findNode("");
+    expect(rootNode).toBeTruthy();
+    expect(rootNode?.error?.valid).toBe(false);
+    expect(rootNode?.error?.errors?.length).toBeGreaterThan(0);
+    expect(rootNode?.error?.errors?.[0].error).toContain(
+      "must have required property 'foo'",
+    );
+
+    // Check foo node - should exist in tree but might not have its own error
+    const fooNode = runtime.findNode("/foo");
+    expect(fooNode).toBeTruthy();
   });
 });

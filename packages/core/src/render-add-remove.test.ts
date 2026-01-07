@@ -415,4 +415,452 @@ describe("Node Add/Remove Functionality", () => {
       expect(runtime.getValue("")).toEqual([""]);
     });
   });
+
+  describe("removeEmptyContainers option", () => {
+    it("removes empty optional container with default 'auto' strategy", () => {
+      // Simulates container.command[] scenario
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+        },
+        additionalProperties: {
+          type: "array",
+          items: { type: "string" },
+        },
+      };
+      const runtime = new SchemaRuntime(validator, schema, {
+        name: "test",
+        command: ["echo"],
+      });
+
+      // command field exists and has one item
+      expect(runtime.getValue("/command")).toEqual(["echo"]);
+
+      // Remove the only item in command array
+      const result = runtime.removeValue("/command/0");
+      expect(result).toBe(true);
+
+      // With 'auto' (default), empty optional container should be removed
+      expect(runtime.getValue("/command")).toBeUndefined();
+      expect(runtime.getValue("")).toEqual({ name: "test" });
+    });
+
+    it("keeps empty required container with 'auto' strategy", () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          tags: {
+            type: "array",
+            items: { type: "string" },
+          },
+        },
+        required: ["tags"],
+      };
+      // tags is defined in properties and is required, so canRemove: false
+      const runtime = new SchemaRuntime(validator, schema, {
+        tags: ["a", "b"],
+      });
+
+      // Remove all items - but tags itself is required
+      runtime.removeValue("/tags/1");
+      runtime.removeValue("/tags/0");
+
+      // Since tags is required (canRemove: false), the empty array should remain
+      expect(runtime.getValue("/tags")).toEqual([]);
+    });
+
+    it("keeps empty container with 'never' strategy", () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+        },
+        additionalProperties: {
+          type: "array",
+          items: { type: "string" },
+        },
+      };
+      const runtime = new SchemaRuntime(
+        validator,
+        schema,
+        {
+          name: "test",
+          command: ["echo"],
+        },
+        { removeEmptyContainers: "never" },
+      );
+
+      // Remove the only item
+      runtime.removeValue("/command/0");
+
+      // With 'never', empty container should remain
+      expect(runtime.getValue("/command")).toEqual([]);
+      expect(runtime.getValue("")).toEqual({ name: "test", command: [] });
+    });
+
+    it("removes empty required container with 'always' strategy", () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          tags: {
+            type: "array",
+            items: { type: "string" },
+          },
+        },
+        required: ["tags"],
+      };
+      const runtime = new SchemaRuntime(
+        validator,
+        schema,
+        { tags: ["a"] },
+        { removeEmptyContainers: "always" },
+      );
+
+      // Remove the only item
+      runtime.removeValue("/tags/0");
+
+      // With 'always', even required container is removed (may cause validation error)
+      expect(runtime.getValue("/tags")).toBeUndefined();
+    });
+
+    it("recursively removes nested empty optional containers", () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+        },
+        additionalProperties: {
+          type: "object",
+          additionalProperties: {
+            type: "array",
+            items: { type: "string" },
+          },
+        },
+      };
+      const runtime = new SchemaRuntime(validator, schema, {
+        name: "test",
+        config: {
+          commands: ["echo"],
+        },
+      });
+
+      // Remove the only item in nested array
+      runtime.removeValue("/config/commands/0");
+
+      // Both commands array and config object should be removed
+      expect(runtime.getValue("/config/commands")).toBeUndefined();
+      expect(runtime.getValue("/config")).toBeUndefined();
+      expect(runtime.getValue("")).toEqual({ name: "test" });
+    });
+
+    it("stops recursion at required container", () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          config: {
+            type: "object",
+            additionalProperties: {
+              type: "array",
+              items: { type: "string" },
+            },
+          },
+        },
+        required: ["config"],
+      };
+      const runtime = new SchemaRuntime(validator, schema, {
+        config: {
+          commands: ["echo"],
+        },
+      });
+
+      // Remove the only item
+      runtime.removeValue("/config/commands/0");
+
+      // commands should be removed, but config (required) should remain
+      expect(runtime.getValue("/config/commands")).toBeUndefined();
+      expect(runtime.getValue("/config")).toEqual({});
+    });
+
+    it("removes empty object container with 'auto' strategy", () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+        },
+        additionalProperties: {
+          type: "object",
+          additionalProperties: { type: "string" },
+        },
+      };
+      const runtime = new SchemaRuntime(validator, schema, {
+        name: "test",
+        metadata: { key: "value" },
+      });
+
+      // Remove the only property in metadata object
+      runtime.removeValue("/metadata/key");
+
+      // Empty object should be removed
+      expect(runtime.getValue("/metadata")).toBeUndefined();
+      expect(runtime.getValue("")).toEqual({ name: "test" });
+    });
+
+    it("removes empty patternProperties container with 'auto' strategy", () => {
+      const schema: Schema = {
+        type: "object",
+        patternProperties: {
+          "^env_": {
+            type: "array",
+            items: { type: "string" },
+          },
+        },
+      };
+      const runtime = new SchemaRuntime(validator, schema, {
+        env_vars: ["PATH=/usr/bin"],
+      });
+
+      // Remove the only item in env_vars array
+      runtime.removeValue("/env_vars/0");
+
+      // Empty array should be removed
+      expect(runtime.getValue("/env_vars")).toBeUndefined();
+      expect(runtime.getValue("")).toEqual({});
+    });
+
+    it("does not remove container when other elements exist", () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+        },
+        additionalProperties: {
+          type: "array",
+          items: { type: "string" },
+        },
+      };
+      const runtime = new SchemaRuntime(validator, schema, {
+        name: "test",
+        commands: ["echo", "ls"],
+      });
+
+      // Remove one item but another remains
+      runtime.removeValue("/commands/0");
+
+      // Container should remain with the other element
+      expect(runtime.getValue("/commands")).toEqual(["ls"]);
+      expect(runtime.getValue("")).toEqual({ name: "test", commands: ["ls"] });
+    });
+
+    it("stops recursion when middle layer has other elements", () => {
+      const schema: Schema = {
+        type: "object",
+        additionalProperties: {
+          type: "object",
+          additionalProperties: {
+            type: "array",
+            items: { type: "string" },
+          },
+        },
+      };
+      const runtime = new SchemaRuntime(validator, schema, {
+        config: {
+          commands: ["echo"],
+          args: ["--help"],
+        },
+      });
+
+      // Remove the only item in commands array
+      runtime.removeValue("/config/commands/0");
+
+      // commands should be removed, but config should remain (has other property)
+      expect(runtime.getValue("/config/commands")).toBeUndefined();
+      expect(runtime.getValue("/config")).toEqual({ args: ["--help"] });
+    });
+
+    it("removes empty object with 'always' strategy even if required", () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          metadata: {
+            type: "object",
+            additionalProperties: { type: "string" },
+          },
+        },
+        required: ["metadata"],
+      };
+      const runtime = new SchemaRuntime(
+        validator,
+        schema,
+        { metadata: { key: "value" } },
+        { removeEmptyContainers: "always" },
+      );
+
+      // Remove the only property
+      runtime.removeValue("/metadata/key");
+
+      // With 'always', even required container is removed
+      expect(runtime.getValue("/metadata")).toBeUndefined();
+    });
+
+    it("keeps empty object with 'never' strategy", () => {
+      const schema: Schema = {
+        type: "object",
+        additionalProperties: {
+          type: "object",
+          additionalProperties: { type: "string" },
+        },
+      };
+      const runtime = new SchemaRuntime(
+        validator,
+        schema,
+        { config: { key: "value" } },
+        { removeEmptyContainers: "never" },
+      );
+
+      // Remove the only property
+      runtime.removeValue("/config/key");
+
+      // With 'never', empty container should remain
+      expect(runtime.getValue("/config")).toEqual({});
+    });
+
+    it("handles deeply nested optional containers", () => {
+      const schema: Schema = {
+        type: "object",
+        additionalProperties: {
+          type: "object",
+          additionalProperties: {
+            type: "object",
+            additionalProperties: {
+              type: "array",
+              items: { type: "string" },
+            },
+          },
+        },
+      };
+      const runtime = new SchemaRuntime(validator, schema, {
+        level1: {
+          level2: {
+            level3: ["value"],
+          },
+        },
+      });
+
+      // Remove the only item at the deepest level
+      runtime.removeValue("/level1/level2/level3/0");
+
+      // All empty containers should be removed
+      expect(runtime.getValue("/level1/level2/level3")).toBeUndefined();
+      expect(runtime.getValue("/level1/level2")).toBeUndefined();
+      expect(runtime.getValue("/level1")).toBeUndefined();
+      expect(runtime.getValue("")).toEqual({});
+    });
+
+    it("removes empty array in optional properties with 'auto' strategy", () => {
+      // Properties without required are optional and should be removable
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          container: {
+            type: "object",
+            properties: {
+              commands: {
+                type: "array",
+                items: { type: "string" },
+              },
+            },
+            // commands is NOT in required, so it's optional
+          },
+        },
+      };
+      const runtime = new SchemaRuntime(validator, schema, {
+        name: "test",
+        container: {
+          commands: ["echo"],
+        },
+      });
+
+      // Remove the only item in commands array
+      runtime.removeValue("/container/commands/0");
+
+      // Empty array should be removed since commands is optional
+      expect(runtime.getValue("/container/commands")).toBeUndefined();
+      // container is also optional, so it should be removed too
+      expect(runtime.getValue("/container")).toBeUndefined();
+      expect(runtime.getValue("")).toEqual({ name: "test" });
+    });
+
+    it("keeps empty array in required properties with 'auto' strategy", () => {
+      // Properties listed in required should NOT be removed
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          container: {
+            type: "object",
+            properties: {
+              commands: {
+                type: "array",
+                items: { type: "string" },
+              },
+            },
+            required: ["commands"], // commands is required
+          },
+        },
+      };
+      const runtime = new SchemaRuntime(validator, schema, {
+        name: "test",
+        container: {
+          commands: ["echo"],
+        },
+      });
+
+      // Remove the only item in commands array
+      runtime.removeValue("/container/commands/0");
+
+      // Empty array should remain since commands is required
+      expect(runtime.getValue("/container/commands")).toEqual([]);
+      // container should also remain since it has content
+      expect(runtime.getValue("/container")).toEqual({ commands: [] });
+      expect(runtime.getValue("")).toEqual({
+        name: "test",
+        container: { commands: [] },
+      });
+    });
+
+    it("removes empty array in properties but stops at required parent", () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          container: {
+            type: "object",
+            properties: {
+              commands: {
+                type: "array",
+                items: { type: "string" },
+              },
+            },
+            // commands is optional
+          },
+        },
+        required: ["container"], // container is required
+      };
+      const runtime = new SchemaRuntime(validator, schema, {
+        container: {
+          commands: ["echo"],
+        },
+      });
+
+      // Remove the only item in commands array
+      runtime.removeValue("/container/commands/0");
+
+      // Empty commands should be removed (optional)
+      expect(runtime.getValue("/container/commands")).toBeUndefined();
+      // But container should remain empty since it's required
+      expect(runtime.getValue("/container")).toEqual({});
+      expect(runtime.getValue("")).toEqual({ container: {} });
+    });
+  });
 });

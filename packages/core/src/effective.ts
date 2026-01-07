@@ -8,6 +8,7 @@ export function resolveEffectiveSchema(
   value: unknown,
   keywordLocation: string,
   instanceLocation: string,
+  isRequired: boolean = true,
 ): {
   effectiveSchema: Schema;
   type: SchemaType;
@@ -133,6 +134,16 @@ export function resolveEffectiveSchema(
     }
   } else {
     type = detectSchemaType(value) as SchemaType;
+  }
+
+  // For optional properties with undefined values, skip validation
+  // but still return the resolved effective schema for UI rendering
+  if (!isRequired && value === undefined) {
+    return {
+      effectiveSchema: effective,
+      type,
+      error: undefined,
+    };
   }
 
   // Perform shallow validation to get all errors

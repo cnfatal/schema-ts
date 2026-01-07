@@ -122,6 +122,132 @@ describe("resolveEffectiveSchema", () => {
     const resC = resolveEffectiveSchema(validator, schema, valueC, "#", "");
     expect(resC.effectiveSchema.properties?.value).toEqual({ type: "number" });
   });
+
+  describe("optional undefined values", () => {
+    it("resolves allOf for optional undefined value", () => {
+      const schema: Schema = {
+        allOf: [{ type: "string" }, { minLength: 1 }],
+      };
+      const res = resolveEffectiveSchema(
+        validator,
+        schema,
+        undefined,
+        "#",
+        "",
+        false,
+      );
+      expect(res.effectiveSchema.type).toBe("string");
+      expect(res.effectiveSchema.minLength).toBe(1);
+      expect(res.type).toBe("string");
+      expect(res.error).toBeUndefined();
+    });
+
+    it("resolves if-then-else for optional undefined value", () => {
+      const schema: Schema = {
+        if: { properties: { mode: { const: "advanced" } } },
+        then: { properties: { extra: { type: "string" } } },
+        else: { properties: { simple: { type: "boolean" } } },
+      };
+      const res = resolveEffectiveSchema(
+        validator,
+        schema,
+        undefined,
+        "#",
+        "",
+        false,
+      );
+      // For undefined value, properties check passes (no properties to validate)
+      // so it goes to `then` branch
+      expect(res.effectiveSchema.properties?.extra).toEqual({
+        type: "string",
+      });
+      expect(res.error).toBeUndefined();
+    });
+
+    it("resolves if-then-else else branch for optional undefined value", () => {
+      const schema: Schema = {
+        // undefined fails type: "object", so it goes to else branch
+        if: { type: "object" },
+        then: { properties: { extra: { type: "string" } } },
+        else: { properties: { simple: { type: "boolean" } } },
+      };
+      const res = resolveEffectiveSchema(
+        validator,
+        schema,
+        undefined,
+        "#",
+        "",
+        false,
+      );
+      // undefined is not an object, so it goes to `else` branch
+      expect(res.effectiveSchema.properties?.simple).toEqual({
+        type: "boolean",
+      });
+      expect(res.error).toBeUndefined();
+    });
+
+    it("resolves anyOf for optional undefined value", () => {
+      const schema: Schema = {
+        anyOf: [
+          { type: "string", minLength: 1 },
+          { type: "number", minimum: 0 },
+        ],
+      };
+      const res = resolveEffectiveSchema(
+        validator,
+        schema,
+        undefined,
+        "#",
+        "",
+        false,
+      );
+      // Should still resolve the schema structure
+      expect(res.effectiveSchema).toBeDefined();
+      expect(res.error).toBeUndefined();
+    });
+
+    it("resolves complex nested schema for optional undefined value", () => {
+      const schema: Schema = {
+        allOf: [
+          { type: "object" },
+          {
+            // undefined fails type: "object"
+            if: { type: "object" },
+            then: { properties: { config: { type: "object" } } },
+            else: { properties: { reason: { type: "string" } } },
+          },
+        ],
+      };
+      const res = resolveEffectiveSchema(
+        validator,
+        schema,
+        undefined,
+        "#",
+        "",
+        false,
+      );
+      expect(res.effectiveSchema.type).toBe("object");
+      // undefined fails the if condition, so else branch is applied
+      expect(res.effectiveSchema.properties?.reason).toEqual({
+        type: "string",
+      });
+      expect(res.error).toBeUndefined();
+    });
+
+    it("returns validation error for required undefined value", () => {
+      const schema: Schema = { type: "string" };
+      const res = resolveEffectiveSchema(
+        validator,
+        schema,
+        undefined,
+        "#",
+        "",
+        true,
+      );
+      expect(res.type).toBe("string");
+      expect(res.error).toBeDefined();
+    });
+  });
 });
 
 describe("mergeSchema", () => {
