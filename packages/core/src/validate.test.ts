@@ -270,4 +270,70 @@ describe("validateSchema fastFail", () => {
     expect(result.valid).toBe(false);
     expect(result.errors?.length).toBeGreaterThan(1);
   });
+
+  it("validates missing properties with nested object and array types", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        user: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            age: { type: "number" },
+          },
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+        },
+        count: { type: "number" },
+      },
+    };
+
+    // Missing nested object property - should pass (not required)
+    expect(validateSchema(schema, {}).valid).toBe(true);
+    expect(validateSchema(schema, { user: {} }).valid).toBe(true);
+    expect(validateSchema(schema, { tags: [] }).valid).toBe(true);
+
+    // Provided values must match types
+    expect(validateSchema(schema, { user: { name: "Alice" } }).valid).toBe(
+      true,
+    );
+    expect(validateSchema(schema, { user: { name: 123 } }).valid).toBe(false); // type mismatch
+    expect(validateSchema(schema, { tags: ["a", "b"] }).valid).toBe(true);
+    expect(validateSchema(schema, { tags: [1, 2] }).valid).toBe(false); // item type mismatch
+  });
+
+  it("validates required nested properties", () => {
+    const schema = {
+      type: "object",
+      required: ["user"],
+      properties: {
+        user: {
+          type: "object",
+          required: ["name"],
+          properties: {
+            name: { type: "string" },
+            age: { type: "number" },
+          },
+        },
+      },
+    };
+
+    // Missing required top-level property
+    expect(validateSchema(schema, {}).valid).toBe(false);
+
+    // Missing required nested property
+    expect(validateSchema(schema, { user: {} }).valid).toBe(false);
+
+    // All required properties provided
+    expect(validateSchema(schema, { user: { name: "Alice" } }).valid).toBe(
+      true,
+    );
+
+    // Optional nested property can be omitted
+    expect(
+      validateSchema(schema, { user: { name: "Alice", age: 30 } }).valid,
+    ).toBe(true);
+  });
 });

@@ -3,6 +3,7 @@ import {
   Schema,
   type SchemaChangeEvent,
   SchemaRuntime,
+  type SchemaRuntimeOptions,
   Validator,
   deepEqual,
 } from "@schema-ts/core";
@@ -85,6 +86,8 @@ export type FormProps = {
   render?: (props: FormFieldRenderProps) => ReactNode;
   /** Form mode: 'create' for new records, 'edit' for existing records */
   mode?: FormMode;
+  /** Schema runtime options for controlling default value behavior */
+  runtimeOptions?: SchemaRuntimeOptions;
   [key: string]: unknown;
 };
 
@@ -94,14 +97,21 @@ export const Form: FC<FormProps> = ({
   onChange,
   validator,
   render,
+  runtimeOptions,
   ...props
 }: FormProps) => {
   // Capture initial value only once at mount
   const [initialValue] = useState(() => value);
 
   const runtime = useMemo(
-    () => new SchemaRuntime(validator || new Validator(), schema, initialValue),
-    [schema, validator, initialValue],
+    () =>
+      new SchemaRuntime(
+        validator || new Validator(),
+        schema,
+        initialValue,
+        runtimeOptions,
+      ),
+    [schema, validator, initialValue, runtimeOptions],
   );
 
   // Sync external value to runtime (only when value actually differs)

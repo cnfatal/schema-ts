@@ -6,13 +6,7 @@ import type { Schema } from "./type";
  * Priority order for determining the default value:
  *   1. const - if defined, returns the const value
  *   2. default - if defined, returns the default value
- *   3. Type-based defaults:
- *      - string: ""
- *      - number/integer: 0
- *      - boolean: false
- *      - null: null
- *      - object: {} with required properties recursively initialized
- *      - array: []
+ *   3. Type-based defaults (controlled by strategy):
  *
  * For objects, only required properties are initialized with their default values.
  * If no type is specified but properties exist, the schema is treated as an object.
@@ -21,10 +15,14 @@ import type { Schema } from "./type";
  *
  * @param schema - The JSON Schema to generate a default value for
  * @param value - Optional existing value to fill defaults into
+ * @param strategy - Controls type-based default behavior:
+ *   - 'always' (default): Returns type-based defaults (e.g., "" for string, [] for array)
+ *   - 'explicit': Only returns explicitly declared schema.const or schema.default
  * @returns The generated default value, or undefined if type cannot be determined
  *
  * @example
  * getDefaultValue({ type: "string" }) // returns ""
+ * getDefaultValue({ type: "string" }, undefined, 'explicit') // returns undefined
  * getDefaultValue({ type: "number", default: 42 }) // returns 42
  * getDefaultValue({ const: "fixed" }) // returns "fixed"
  * getDefaultValue({
@@ -34,10 +32,16 @@ import type { Schema } from "./type";
  * }) // returns { name: "" }
  * getDefaultValue({ type: "object", properties: { a: { default: 1 } } }, {}) // returns { a: 1 }
  */
-export function getDefaultValue(schema: Schema, value?: unknown): unknown {
+export function getDefaultValue(
+  schema: Schema,
+  value?: unknown,
+  strategy: "always" | "explicit" = "explicit",
+): unknown {
   if (value === undefined) {
     if (schema.const !== undefined) return schema.const;
     if (schema.default !== undefined) return schema.default;
+    // In 'explicit' mode, only return values from const/default
+    if (strategy === "explicit") return undefined;
   }
 
   const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
@@ -55,9 +59,9 @@ export function getDefaultValue(schema: Schema, value?: unknown): unknown {
     if (schema.properties) {
       for (const [key, subschema] of Object.entries(schema.properties)) {
         if (obj[key] !== undefined) {
-          obj[key] = getDefaultValue(subschema, obj[key]);
+          obj[key] = getDefaultValue(subschema, obj[key], strategy);
         } else if (schema.required?.includes(key)) {
-          obj[key] = getDefaultValue(subschema);
+          obj[key] = getDefaultValue(subschema, undefined, strategy);
         }
       }
     }
@@ -77,9 +81,9 @@ export function getDefaultValue(schema: Schema, value?: unknown): unknown {
     if (schema.prefixItems) {
       schema.prefixItems.forEach((subschema, index) => {
         if (index < arr.length) {
-          arr[index] = getDefaultValue(subschema, arr[index]);
+          arr[index] = getDefaultValue(subschema, arr[index], strategy);
         } else if (value === undefined) {
-          arr.push(getDefaultValue(subschema));
+          arr.push(getDefaultValue(subschema, undefined, strategy));
         }
       });
     }
@@ -87,7 +91,7 @@ export function getDefaultValue(schema: Schema, value?: unknown): unknown {
     if (value !== undefined && schema.items) {
       const startIndex = schema.prefixItems ? schema.prefixItems.length : 0;
       for (let i = startIndex; i < arr.length; i++) {
-        arr[i] = getDefaultValue(schema.items, arr[i]);
+        arr[i] = getDefaultValue(schema.items, arr[i], strategy);
       }
     }
 

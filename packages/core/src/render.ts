@@ -54,6 +54,17 @@ export type SchemaChangeEvent = {
   path: string;
 };
 
+export interface SchemaRuntimeOptions {
+  /**
+   * Control how default values are applied when schema changes.
+   * - 'always': Fill all type-based defaults (e.g., [] for array, "" for string)
+   * - 'explicit': Only fill explicitly declared defaults (schema.default)
+   * - 'never': Never auto-fill defaults
+   * @default 'explicit'
+   */
+  autoFillDefaults?: "always" | "explicit" | "never";
+}
+
 export class SchemaRuntime {
   private validator: Validator;
 
@@ -70,6 +81,7 @@ export class SchemaRuntime {
   private value: unknown;
   private version: number = 0;
   private rootSchema: Schema = {};
+  private options: SchemaRuntimeOptions;
 
   /**
    * Create a new SchemaRuntime instance.
@@ -77,15 +89,22 @@ export class SchemaRuntime {
    * @param validator - The validator instance for schema validation
    * @param schema - The JSON Schema definition (will be normalized and dereferenced)
    * @param value - The initial data value to manage
+   * @param options - Runtime configuration options
    *
    * @example
    * const validator = new Validator();
    * const schema = { type: "object", properties: { name: { type: "string" } } };
    * const runtime = new SchemaRuntime(validator, schema, { name: "Alice" });
    */
-  constructor(validator: Validator, schema: Schema | unknown, value: unknown) {
+  constructor(
+    validator: Validator,
+    schema: Schema | unknown,
+    value: unknown,
+    options: SchemaRuntimeOptions = {},
+  ) {
     this.validator = validator;
     this.value = value;
+    this.options = { autoFillDefaults: "explicit", ...options };
 
     const normalized = normalizeSchema(schema);
 
@@ -560,6 +579,11 @@ export class SchemaRuntime {
     newSchema: Schema,
     type: SchemaType,
   ): void {
+    // Skip if 'never' mode is enabled
+    if (this.options.autoFillDefaults === "never") {
+      return;
+    }
+
     const value = this.getValue(instanceLocation);
 
     if (type === "object" && newSchema.properties) {
@@ -576,7 +600,11 @@ export class SchemaRuntime {
         const hasValue = obj[key] !== undefined;
 
         if (!hasValue) {
-          const defaultValue = getDefaultValue(subschema);
+          const defaultValue = getDefaultValue(
+            subschema,
+            undefined,
+            this.options.autoFillDefaults,
+          );
           if (defaultValue !== undefined) {
             const propertyPath = jsonPointerJoin(instanceLocation, key);
             setJsonPointer(this.value, propertyPath, defaultValue);
@@ -594,7 +622,12 @@ export class SchemaRuntime {
       // Fill defaults for prefixItems positions that don't have values
       for (let i = 0; i < newSchema.prefixItems.length; i++) {
         if (arr[i] === undefined) {
-          const defaultValue = getDefaultValue(newSchema.prefixItems[i]);
+          const itemSchema = newSchema.prefixItems[i];
+          const defaultValue = getDefaultValue(
+            itemSchema,
+            undefined,
+            this.options.autoFillDefaults,
+          );
           if (defaultValue !== undefined) {
             const itemPath = jsonPointerJoin(instanceLocation, String(i));
             setJsonPointer(this.value, itemPath, defaultValue);
