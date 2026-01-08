@@ -9,24 +9,21 @@ import {
 } from "@schema-ts/core";
 import {
   type ReactNode,
-  type RefCallback,
   forwardRef,
-  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 import {
   type FieldDomRegistry,
   type FormContextValue,
   type FormMode,
   FormContext,
-  useFormContext,
   useFormSharedState,
 } from "./FormContext";
+import { FormField, type FormFieldRenderProps } from "./FormField";
 
 /**
  * Imperative handle exposed by the Form component via ref.
@@ -97,101 +94,68 @@ function findFirstErrorNode(node: FieldNode): FieldNode | null {
   return null;
 }
 
-export interface FormFieldRenderProps extends FieldNode {
-  value: unknown;
-  onChange: (val: unknown) => void;
-  /** Callback to trigger validation, typically called on blur */
-  onBlur: () => void;
-  runtime: SchemaRuntime;
-  mode?: FormMode;
-  /**
-   * Ref callback to register the field's DOM element for scrollToFirstError.
-   * Pass this to the ref prop of your widget: `<div ref={fieldRef}>...</div>`
-   */
-  fieldRef: RefCallback<HTMLElement>;
-  /** Custom props passed through from FormField */
-  [key: string]: unknown;
-}
+/**
+ * Handler function type for custom scroll-to-error behavior.
+ * @param element - The DOM element to scroll to
+ * @param options - Scroll behavior options
+ */
+export type ScrollToErrorHandler = (
+  element: HTMLElement,
+  options: ScrollIntoViewOptions,
+) => void;
 
-export interface FormFieldProps {
-  runtime: SchemaRuntime;
-  /** JSON path to render (e.g., "#" for root, "#/properties/name" for nested) */
-  path: string;
-  /** Render function to create UI for this field */
-  render?: (props: FormFieldRenderProps) => ReactNode;
-  /** Custom props to pass through to the render function */
-  [key: string]: unknown;
-}
+/**
+ * Default scroll-to-error handler.
+ * Scrolls to an element and focuses on it after scroll completes.
+ * Uses scrollend event when supported, with timeout fallback.
+ * @param element - The element to scroll to
+ * @param options - Scroll behavior options
+ */
+function scrollToElementAndFocus(
+  element: HTMLElement,
+  options: ScrollIntoViewOptions = { behavior: "smooth", block: "center" },
+): void {
+  element.scrollIntoView(options);
 
-export function FormField({ runtime, path, render, ...props }: FormFieldProps) {
-  // Get node reference once - node reference is stable across updates
-  const node = useMemo(() => runtime.findNode(path), [runtime, path]);
+  // Focus after scroll completes
+  const focusElement = () => {
+    // Find first focusable element within or use element itself
+    const focusable =
+      element.querySelector<HTMLElement>(
+        'input, textarea, select, button, [tabindex]:not([tabindex="-1"])',
+      ) ?? element;
+    if (typeof focusable.focus === "function") {
+      focusable.focus({ preventScroll: true });
+    }
+  };
 
-  // Get context for registry and mode
-  const context = useFormContext();
-  const registry = context?.domRegistry ?? null;
-
-  // Stable subscribe callback - only trigger re-render for value and schema changes
-  const subscribe = useCallback(
-    (onStoreChange: () => void) =>
-      runtime.subscribe(path, (e: SchemaChangeEvent) => {
-        // TODO: limit to value/schema changes only?
-        if (e.type) {
-          onStoreChange();
-        }
-      }),
-    [runtime, path],
-  );
-
-  // Get version directly from cached node reference
-  const version = useSyncExternalStore(subscribe, () => node?.version ?? -1);
-
-  const onChange = useCallback(
-    (val: unknown) => runtime.setValue(path, val),
-    [runtime, path],
-  );
-
-  // onBlur callback - can be used to trigger validation on blur
-  const onBlur = useCallback(() => {
-    // Re-validate by setting current value (triggers validation)
-    const currentValue = runtime.getValue(path);
-    runtime.setValue(path, currentValue);
-  }, [runtime, path]);
-
-  // Create fieldRef callback for DOM element registration
-  const instanceLocation = node?.instanceLocation ?? "";
-  const fieldRef: RefCallback<HTMLElement> = useCallback(
-    (element: HTMLElement | null) => {
-      if (!registry) return;
-      if (element) {
-        registry.register(instanceLocation, element);
-      } else {
-        registry.unregister(instanceLocation);
-      }
-    },
-    [registry, instanceLocation],
-  );
-
-  const renderProps = useMemo(
-    () =>
-      node
-        ? ({
-            ...node,
-            value: runtime.getValue(path),
-            runtime,
-            onChange,
-            onBlur,
-            fieldRef,
-            version,
-            ...props,
-          } as FormFieldRenderProps)
-        : null,
-    [node, version, runtime, onChange, onBlur, fieldRef, path, props],
-  );
-
-  if (!renderProps) return null;
-
-  return render?.(renderProps) ?? null;
+  if (options.behavior === "smooth") {
+    // Use scrollend event if supported, otherwise fallback to timeout
+    if ("onscrollend" in window) {
+      const scrollContainer =
+        element.closest("[style*='overflow']") ??
+        document.scrollingElement ??
+        document.documentElement;
+      const handleScrollEnd = () => {
+        focusElement();
+        scrollContainer.removeEventListener("scrollend", handleScrollEnd);
+      };
+      scrollContainer.addEventListener("scrollend", handleScrollEnd, {
+        once: true,
+      });
+      // Fallback timeout in case scrollend doesn't fire
+      setTimeout(() => {
+        scrollContainer.removeEventListener("scrollend", handleScrollEnd);
+        focusElement();
+      }, 500);
+    } else {
+      // Fallback for browsers without scrollend support
+      setTimeout(focusElement, 300);
+    }
+  } else {
+    // Instant scroll, focus immediately
+    focusElement();
+  }
 }
 
 export type FormProps = {
@@ -206,6 +170,13 @@ export type FormProps = {
   runtimeOptions?: SchemaRuntimeOptions;
   /** Initial values for shared state. Keys are state keys, values are initial values. */
   sharedStateInitialValues?: Record<string, unknown>;
+  /**
+   * Custom handler for scrolling to error fields.
+   * If not provided, uses the default scrollToElementAndFocus behavior.
+   * @param element - The DOM element to scroll to
+   * @param options - Scroll behavior options passed from scrollToFirstError
+   */
+  onScrollToError?: ScrollToErrorHandler;
 };
 
 export const Form = forwardRef<FormHandle, FormProps>(function Form(
@@ -221,6 +192,7 @@ export const Form = forwardRef<FormHandle, FormProps>(function Form(
     runtimeOptions,
     mode,
     sharedStateInitialValues,
+    onScrollToError,
   } = props;
 
   // Capture initial value only once at mount
@@ -296,17 +268,14 @@ export const Form = forwardRef<FormHandle, FormProps>(function Form(
         }
         const element = domRegistry.get(node.instanceLocation);
         if (element) {
-          element.scrollIntoView(options);
-          // Try to focus the element if it's focusable
-          if (typeof element.focus === "function") {
-            element.focus();
-          }
+          const handler = onScrollToError ?? scrollToElementAndFocus;
+          handler(element, options);
           return true;
         }
         return false;
       },
     }),
-    [runtime, domRegistry],
+    [runtime, domRegistry, onScrollToError],
   );
 
   // Sync external value to runtime (only when value actually differs)

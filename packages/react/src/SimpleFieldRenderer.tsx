@@ -1,6 +1,6 @@
 import React, { RefCallback } from "react";
 import { Schema, type Output } from "@schema-ts/core";
-import { FormField, FormFieldRenderProps } from "./Form";
+import { FormField, FormFieldRenderProps } from "./FormField";
 import { FormMode } from "./FormContext";
 
 /**

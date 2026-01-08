@@ -27,5 +27,5 @@ TypeScript monorepo(pnpm workspace) for schema validation and UI generation.
 
 - **Language**: English only for comments/commits.
 - **Compatibility**: No backward compatibility (active development).
-- **Refactoring**: Extract independent logic into standalone functions.
+- **Refactoring**: Extract into standalone function when an logic block has many lines.
 - **Note**: Rebuild dependent packages after core changes.
