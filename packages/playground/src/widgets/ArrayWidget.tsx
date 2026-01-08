@@ -11,14 +11,14 @@ export function DefaultArrayWidget({
   description,
   required,
   error,
-  registerRef,
+  fieldRef,
   items,
   canAdd,
   onAdd,
 }: ArrayWidgetProps) {
   return (
     <FieldGroup
-      ref={registerRef}
+      ref={fieldRef}
       label={label}
       description={description}
       required={required}

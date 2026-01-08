@@ -11,7 +11,7 @@ export function DefaultTextWidget({
   disabled,
   onChange,
   error,
-  registerRef,
+  fieldRef,
   description,
   required,
 }: TextWidgetProps) {
@@ -24,7 +24,7 @@ export function DefaultTextWidget({
   );
 
   return (
-    <FormField ref={registerRef}>
+    <FormField ref={fieldRef}>
       <TextField
         label={label}
         type="text"

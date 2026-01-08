@@ -11,12 +11,12 @@ export function DefaultSelectWidget({
   onChange,
   options,
   error,
-  registerRef,
+  fieldRef,
   description,
   required,
 }: SelectWidgetProps) {
   return (
-    <FormField ref={registerRef}>
+    <FormField ref={fieldRef}>
       <SelectField
         label={label}
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

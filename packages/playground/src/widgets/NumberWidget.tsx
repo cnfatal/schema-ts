@@ -98,7 +98,7 @@ export function DefaultNumberWidget({
   value,
   onChange,
   error,
-  registerRef,
+  fieldRef,
   description,
   required,
   schema,
@@ -188,7 +188,7 @@ export function DefaultNumberWidget({
   const displayError = localError || error;
 
   return (
-    <FormField ref={registerRef}>
+    <FormField ref={fieldRef}>
       <TextField
         label={label}
         type="number"

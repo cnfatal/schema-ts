@@ -12,7 +12,7 @@ export interface XEnumWidgetProps extends WidgetProps {
 function XEnumWidget(props: XEnumWidgetProps) {
   return (
     <div
-      ref={props.registerRef}
+      ref={props.fieldRef}
       style={{
         marginBottom: "16px",
         padding: "8px",

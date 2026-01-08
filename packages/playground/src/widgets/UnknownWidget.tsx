@@ -4,10 +4,10 @@ import { Alert, FormField } from "../components";
 export function DefaultUnknownWidget({
   schema,
   value,
-  registerRef,
+  fieldRef,
 }: UnknownWidgetProps) {
   return (
-    <FormField ref={registerRef} label="Unknown Widget">
+    <FormField ref={fieldRef} label="Unknown Widget">
       <Alert severity="warning">Unsupported schema type: {schema.type}</Alert>
       <pre>{JSON.stringify(value, null, 2)}</pre>
     </FormField>

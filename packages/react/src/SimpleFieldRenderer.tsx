@@ -1,4 +1,4 @@
-import React from "react";
+import React, { RefCallback } from "react";
 import { Schema, type Output } from "@schema-ts/core";
 import { FormField, FormFieldRenderProps } from "./Form";
 import { FormMode } from "./FormContext";
@@ -35,8 +35,9 @@ export interface WidgetProps {
   mode?: FormMode;
   /**
    * Ref callback to register the field's DOM element for scrolling to errors.
+   * Pass this to the ref prop of your widget: `<div ref={fieldRef}>...</div>`
    */
-  registerRef: (element: HTMLElement | null) => void;
+  fieldRef: RefCallback<HTMLElement>;
 
   // the schema for the field being rendered
   instanceLocation: string;

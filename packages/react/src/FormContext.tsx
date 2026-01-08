@@ -102,9 +102,14 @@ export function useFormContextSharedState() {
 /**
  * Hook to create a shared state management instance.
  * Provides setValue, getValue, and subscribe methods for inter-component communication.
+ * @param initialValues - Optional initial values for the shared state (only applied on mount)
  */
-export function useFormSharedState(): FormSharedState {
-  const valuesRef = useRef<Map<string, unknown>>(new Map());
+export function useFormSharedState(
+  initialValues?: Record<string, unknown>,
+): FormSharedState {
+  const valuesRef = useRef<Map<string, unknown>>(
+    new Map(initialValues ? Object.entries(initialValues) : undefined),
+  );
   const listenersRef = useRef<Map<string, Set<(val: unknown) => void>>>(
     new Map(),
   );

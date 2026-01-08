@@ -19,7 +19,7 @@ export function DefaultObjectWidget({
   description,
   required,
   error,
-  registerRef,
+  fieldRef,
   properties,
   onAddProperty,
 }: ObjectWidgetProps) {
@@ -37,7 +37,7 @@ export function DefaultObjectWidget({
 
   return (
     <FieldGroup
-      ref={registerRef}
+      ref={fieldRef}
       label={label}
       description={description}
       required={required}
