@@ -691,23 +691,66 @@ export class SchemaRuntime {
    * This handles cases like if-then-else where new properties with defaults
    * may appear when conditions change.
    *
+   * Container initialization rules:
+   * - Root node is always considered required and will be initialized if it has defaults or required properties
+   * - Nested containers are initialized only if they are in parent's required array
+   *
    * @param instanceLocation - The path to the node
    * @param newSchema - The new effective schema
    * @param type - The schema type
+   * @param isRequired - Whether this node is required by its parent
    */
   private applySchemaDefaults(
     instanceLocation: string,
     newSchema: Schema,
     type: SchemaType,
+    isRequired: boolean = true,
   ): void {
     // Skip if 'never' mode is enabled
-    if (this.options.autoFillDefaults === "never") {
+    const strategy = this.options.autoFillDefaults;
+    if (strategy === "never") {
       return;
     }
 
-    const value = this.getValue(instanceLocation);
+    let value = this.getValue(instanceLocation);
+    const isRoot = instanceLocation === ROOT_PATH;
 
     if (type === "object" && newSchema.properties) {
+      const requiredSet = new Set(newSchema.required || []);
+
+      // Check if any property needs initialization:
+      // 1. Has an explicit default value
+      // 2. Is required AND is an object/array type (needs container initialization)
+      const hasAnyDefaults = Object.entries(newSchema.properties).some(
+        ([key, subschema]) => {
+          const defaultValue = getDefaultValue(subschema, { strategy });
+          if (defaultValue !== undefined) return true;
+
+          // Required object/array containers need initialization
+          const isChildRequired = requiredSet.has(key);
+          if (
+            isChildRequired &&
+            (subschema.type === "object" || subschema.type === "array")
+          ) {
+            return true;
+          }
+          return false;
+        },
+      );
+
+      // Determine if we should initialize this container:
+      // - Root node: always initialize if there are defaults or required containers to fill
+      // - Non-root node: only initialize if this node is required AND has content to fill
+      const shouldInitialize =
+        (value === undefined || value === null) &&
+        hasAnyDefaults &&
+        (isRoot || isRequired);
+
+      if (shouldInitialize) {
+        value = {};
+        this.setValueAtPath(normalizeRootPath(instanceLocation), value);
+      }
+
       const obj =
         value && typeof value === "object"
           ? (value as Record<string, unknown>)
@@ -715,18 +758,24 @@ export class SchemaRuntime {
       if (!obj) return;
 
       for (const [key, subschema] of Object.entries(newSchema.properties)) {
-        // Fill defaults for properties that don't have a value yet
-        // This applies when switching branches (if-then-else) where
-        // the new branch may have different defaults
         const hasValue = obj[key] !== undefined;
+        const isChildRequired = requiredSet.has(key);
 
         if (!hasValue) {
-          const defaultValue = getDefaultValue(subschema, {
-            strategy: this.options.autoFillDefaults,
-          });
+          const defaultValue = getDefaultValue(subschema, { strategy });
           if (defaultValue !== undefined) {
+            // Fill default value
             const propertyPath = jsonPointerJoin(instanceLocation, key);
             setJsonPointer(this.value, propertyPath, defaultValue);
+          } else if (isChildRequired && subschema.type === "object") {
+            // Initialize required object containers even without defaults
+            // This allows nested required objects to be properly initialized
+            const propertyPath = jsonPointerJoin(instanceLocation, key);
+            setJsonPointer(this.value, propertyPath, {});
+          } else if (isChildRequired && subschema.type === "array") {
+            // Initialize required array containers even without defaults
+            const propertyPath = jsonPointerJoin(instanceLocation, key);
+            setJsonPointer(this.value, propertyPath, []);
           }
         }
       }
@@ -742,9 +791,7 @@ export class SchemaRuntime {
       for (let i = 0; i < newSchema.prefixItems.length; i++) {
         if (arr[i] === undefined) {
           const itemSchema = newSchema.prefixItems[i];
-          const defaultValue = getDefaultValue(itemSchema, {
-            strategy: this.options.autoFillDefaults,
-          });
+          const defaultValue = getDefaultValue(itemSchema, { strategy });
           if (defaultValue !== undefined) {
             const itemPath = jsonPointerJoin(instanceLocation, String(i));
             setJsonPointer(this.value, itemPath, defaultValue);
@@ -987,7 +1034,12 @@ export class SchemaRuntime {
       // applySchemaDefaults will respect the autoFillDefaults option internally
       // Child nodes will be built after and will send their own notifications
       if (effectiveSchemaChanged) {
-        this.applySchemaDefaults(instanceLocation, effectiveSchema, type);
+        this.applySchemaDefaults(
+          instanceLocation,
+          effectiveSchema,
+          type,
+          isRequired,
+        );
       }
 
       // Update node state
