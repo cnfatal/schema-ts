@@ -1,5 +1,13 @@
 # @schema-ts/playground
 
+## 0.0.4
+
+### Patch Changes
+
+- Updated dependencies [e90d1da]
+  - @schema-ts/core@0.1.4
+  - @schema-ts/react@0.1.4
+
 ## 0.0.3
 
 ### Patch Changes
