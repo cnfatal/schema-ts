@@ -1,5 +1,11 @@
 # @schema-ts/core
 
+## 0.1.5
+
+### Patch Changes
+
+- 5055eb6: activate validation
+
 ## 0.1.4
 
 ### Patch Changes
