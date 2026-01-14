@@ -18,6 +18,9 @@ describe("SchemaRuntime Validation", () => {
     const value = "abc"; // Invalid: too short
 
     const runtime = new SchemaRuntime(validator, schema, value);
+
+    // Explicitly validate to trigger error generation (lazy validation)
+    runtime.validate("");
     const node = runtime.root;
 
     expect(node.error).toBeDefined();
@@ -39,6 +42,9 @@ describe("SchemaRuntime Validation", () => {
     expect(node.error).toBeUndefined();
 
     runtime.setValue("#", 5); // Invalid
+
+    // Explicitly validate
+    runtime.validate("");
     node = runtime.root;
 
     expect(node.error).toBeDefined();
@@ -60,6 +66,9 @@ describe("SchemaRuntime Validation", () => {
     const value = { foo: 123 };
 
     const runtime = new SchemaRuntime(validator, schema, value);
+
+    // Validate root (shallow checks on parent)
+    runtime.validate("");
     const rootNode = runtime.root;
 
     // Parent node validation should be SHALLOW.
@@ -69,6 +78,8 @@ describe("SchemaRuntime Validation", () => {
     expect(rootNode.error).toBeUndefined();
 
     // Child node 'foo' should be invalid
+    // Validate child specifically
+    runtime.validate("/foo");
     const fooNode = runtime.getNode("/foo");
     expect(fooNode).not.toBeNull();
     expect(fooNode?.error?.valid).toBe(false);
@@ -83,6 +94,9 @@ describe("SchemaRuntime Validation", () => {
     const value = { foo: 123 };
 
     const runtime = new SchemaRuntime(validator, schema, value);
+
+    // Validate root
+    runtime.validate("");
     const rootNode = runtime.root;
 
     // Shallow validation checks 'required', so it should fail

@@ -9,6 +9,7 @@ describe("SchemaRuntime - const", () => {
   it("identifies error when value doesn't match const", () => {
     const schema: Schema = { const: "fixed" };
     const runtime = new SchemaRuntime(validator, schema, "wrong");
+    runtime.validate("");
     expect(runtime.root.error?.valid).toBe(false);
     expect(runtime.root.error?.errors?.[0].keywordLocation).toContain("const");
     expect(runtime.root.error?.errors?.[0].error).toContain(
@@ -28,6 +29,7 @@ describe("SchemaRuntime - const", () => {
     expect(runtime1.root.error).toBeUndefined();
 
     const runtime2 = new SchemaRuntime(validator, schema, { a: 2 });
+    runtime2.validate("");
     expect(runtime2.root.error?.valid).toBe(false);
     expect(runtime2.root.error?.errors?.[0].error).toContain(
       'must be equal to {"a":1}',

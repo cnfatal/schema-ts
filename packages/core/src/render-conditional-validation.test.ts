@@ -35,6 +35,7 @@ describe("Conditional Schema Validation Error Clearing", () => {
       });
 
       // Should have error: value should be string
+      runtime.validate("/value");
       let valueNode = runtime.getNode("/value");
       expect(valueNode?.error).toBeDefined();
       expect(valueNode?.error?.valid).toBe(false);
@@ -73,6 +74,7 @@ describe("Conditional Schema Validation Error Clearing", () => {
       });
 
       // Should have error: plan not in ["gold", "platinum"]
+      runtime.validate("/plan");
       let planNode = runtime.getNode("/plan");
       expect(planNode?.error).toBeDefined();
       expect(planNode?.error?.valid).toBe(false);
@@ -111,6 +113,7 @@ describe("Conditional Schema Validation Error Clearing", () => {
       });
 
       // Should have error: id doesn't match ^[0-9]+$
+      runtime.validate("/id");
       let idNode = runtime.getNode("/id");
       expect(idNode?.error).toBeDefined();
       expect(idNode?.error?.valid).toBe(false);
@@ -149,6 +152,7 @@ describe("Conditional Schema Validation Error Clearing", () => {
       });
 
       // Should have error: age exceeds maximum 17
+      runtime.validate("/age");
       let ageNode = runtime.getNode("/age");
       expect(ageNode?.error).toBeDefined();
       expect(ageNode?.error?.valid).toBe(false);
@@ -187,6 +191,7 @@ describe("Conditional Schema Validation Error Clearing", () => {
       });
 
       // Should have error: text too short
+      runtime.validate("/text");
       let textNode = runtime.getNode("/text");
       expect(textNode?.error).toBeDefined();
       expect(textNode?.error?.valid).toBe(false);
@@ -237,12 +242,14 @@ describe("Conditional Schema Validation Error Clearing", () => {
       });
 
       // Should have error: value below minimum 100
+      runtime.validate("/value");
       let valueNode = runtime.getNode("/value");
       expect(valueNode?.error).toBeDefined();
       expect(valueNode?.error?.valid).toBe(false);
 
       // Change enabled to false -> value becomes string type, 50 is invalid
       runtime.setValue("/enabled", false);
+      runtime.validate("/value");
       valueNode = runtime.getNode("/value");
       // Now value=50 is invalid because it should be string
       expect(valueNode?.error).toBeDefined();
@@ -288,6 +295,7 @@ describe("Conditional Schema Validation Error Clearing", () => {
       });
 
       // Should have error: count below minimum 100
+      runtime.validate("/count");
       let countNode = runtime.getNode("/count");
       expect(countNode?.error).toBeDefined();
       expect(countNode?.error?.valid).toBe(false);

@@ -22,7 +22,13 @@ describe("resolveEffectiveSchema", () => {
     };
     const value = { type: "A", value: "test" };
     const res = resolveEffectiveSchema(validator, schema, value, "#", "");
-    expect(res.effectiveSchema.properties?.value).toEqual({ type: "string" });
+    expect(res.effectiveSchema.properties?.value).toMatchObject({
+      type: "string",
+    });
+    // Verify x-origin-keyword is set correctly
+    expect(res.effectiveSchema.properties?.value?.["x-origin-keyword"]).toBe(
+      "#/then/properties/value",
+    );
   });
 
   it("resolves if-then-else (else case)", () => {
@@ -33,7 +39,13 @@ describe("resolveEffectiveSchema", () => {
     };
     const value = { type: "B", value: 123 };
     const res = resolveEffectiveSchema(validator, schema, value, "#", "");
-    expect(res.effectiveSchema.properties?.value).toEqual({ type: "number" });
+    expect(res.effectiveSchema.properties?.value).toMatchObject({
+      type: "number",
+    });
+    // Verify x-origin-keyword is set correctly
+    expect(res.effectiveSchema.properties?.value?.["x-origin-keyword"]).toBe(
+      "#/else/properties/value",
+    );
   });
 
   it("resolves allOf", () => {
@@ -58,7 +70,7 @@ describe("resolveEffectiveSchema", () => {
 
   it("handles type mismatch", () => {
     const schema: Schema = { type: "string" };
-    const res = resolveEffectiveSchema(validator, schema, 123, "#", "");
+    const res = resolveEffectiveSchema(validator, schema, 123, "#", "", true);
     expect(res.type).toBe("string");
     expect(res.error).toBeDefined();
     expect(res.error?.valid).toBe(false);
@@ -77,11 +89,22 @@ describe("resolveEffectiveSchema", () => {
 
     const value1 = { type: "A", subType: "A1", value: "test" };
     const res1 = resolveEffectiveSchema(validator, schema, value1, "#", "");
-    expect(res1.effectiveSchema.properties?.value).toEqual({ type: "string" });
+    expect(res1.effectiveSchema.properties?.value).toMatchObject({
+      type: "string",
+    });
+    // The nested then is resolved at #/then level, so the origin tracks from there
+    expect(res1.effectiveSchema.properties?.value?.["x-origin-keyword"]).toBe(
+      "#/then/properties/value",
+    );
 
     const value2 = { type: "A", subType: "A2", value: 123 };
     const res2 = resolveEffectiveSchema(validator, schema, value2, "#", "");
-    expect(res2.effectiveSchema.properties?.value).toEqual({ type: "number" });
+    expect(res2.effectiveSchema.properties?.value).toMatchObject({
+      type: "number",
+    });
+    expect(res2.effectiveSchema.properties?.value?.["x-origin-keyword"]).toBe(
+      "#/then/properties/value",
+    );
   });
 
   it("resolves if-then-else inside allOf", () => {
@@ -112,15 +135,27 @@ describe("resolveEffectiveSchema", () => {
 
     const valueA = { type: "A" };
     const resA = resolveEffectiveSchema(validator, schema, valueA, "#", "");
-    expect(resA.effectiveSchema.properties?.value).toEqual({ type: "string" });
+    expect(resA.effectiveSchema.properties?.value).toMatchObject({
+      type: "string",
+    });
+    expect(resA.effectiveSchema.properties?.value?.["x-origin-keyword"]).toBe(
+      "#/then/properties/value",
+    );
 
     const valueB = { type: "B" };
     const resB = resolveEffectiveSchema(validator, schema, valueB, "#", "");
-    expect(resB.effectiveSchema.properties?.value).toEqual({ type: "string" });
+    expect(resB.effectiveSchema.properties?.value).toMatchObject({
+      type: "string",
+    });
 
     const valueC = { type: "C" };
     const resC = resolveEffectiveSchema(validator, schema, valueC, "#", "");
-    expect(resC.effectiveSchema.properties?.value).toEqual({ type: "number" });
+    expect(resC.effectiveSchema.properties?.value).toMatchObject({
+      type: "number",
+    });
+    expect(resC.effectiveSchema.properties?.value?.["x-origin-keyword"]).toBe(
+      "#/else/properties/value",
+    );
   });
 
   describe("optional undefined values", () => {
@@ -158,9 +193,12 @@ describe("resolveEffectiveSchema", () => {
       );
       // For undefined value, properties check passes (no properties to validate)
       // so it goes to `then` branch
-      expect(res.effectiveSchema.properties?.extra).toEqual({
+      expect(res.effectiveSchema.properties?.extra).toMatchObject({
         type: "string",
       });
+      expect(res.effectiveSchema.properties?.extra?.["x-origin-keyword"]).toBe(
+        "#/then/properties/extra",
+      );
       expect(res.error).toBeUndefined();
     });
 
@@ -180,9 +218,12 @@ describe("resolveEffectiveSchema", () => {
         false,
       );
       // undefined is not an object, so it goes to `else` branch
-      expect(res.effectiveSchema.properties?.simple).toEqual({
+      expect(res.effectiveSchema.properties?.simple).toMatchObject({
         type: "boolean",
       });
+      expect(res.effectiveSchema.properties?.simple?.["x-origin-keyword"]).toBe(
+        "#/else/properties/simple",
+      );
       expect(res.error).toBeUndefined();
     });
 
@@ -228,9 +269,14 @@ describe("resolveEffectiveSchema", () => {
       );
       expect(res.effectiveSchema.type).toBe("object");
       // undefined fails the if condition, so else branch is applied
-      expect(res.effectiveSchema.properties?.reason).toEqual({
+      expect(res.effectiveSchema.properties?.reason).toMatchObject({
         type: "string",
       });
+      // The origin is #/allOf/1/properties/reason because the if-then-else
+      // is resolved within allOf/1 context
+      expect(res.effectiveSchema.properties?.reason?.["x-origin-keyword"]).toBe(
+        "#/allOf/1/properties/reason",
+      );
       expect(res.error).toBeUndefined();
     });
 

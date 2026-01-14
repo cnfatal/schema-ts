@@ -6,6 +6,11 @@ import { FormFieldRenderProps } from "../FormField";
 export interface ObjectPropertyProps {
   key: string;
   schema: Schema;
+  /** The keywordLocation from FieldNode, used for grouping */
+  keywordLocation: string;
+
+  /** The originKeywordLocation from FieldNode, used for grouping */
+  originKeywordLocation?: string;
 
   // render the property content, options is passed to the widget
   render: (options?: Record<string, unknown>) => React.ReactNode;
@@ -49,6 +54,8 @@ export const objectExtension = (
             return {
               key: childKey,
               schema: child.schema,
+              keywordLocation: child.keywordLocation,
+              originKeywordLocation: child.originKeywordLocation,
               render: renderChild,
               onRemove,
             };

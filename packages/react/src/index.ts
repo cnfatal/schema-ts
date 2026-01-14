@@ -8,6 +8,7 @@ export * from "./FormContext";
 export * from "./hooks";
 export * from "./SimpleFieldRenderer";
 export * from "./extensions";
+export * from "./grouping";
 
 export function createSimpleFieldRenderer(
   registry: BuiltinWidgetsRegistry,

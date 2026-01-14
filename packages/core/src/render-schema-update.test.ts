@@ -35,6 +35,7 @@ describe("Schema Update Scenarios", () => {
 
     // Value remains "value" (string) but schema expects number, so error should be present
     expect(runtime.getValue("/field")).toBe("value");
+    runtime.validate("/field");
     expect(node?.error).toBeDefined();
     expect(node?.error?.valid).toBe(false);
     expect(node?.error?.errors?.[0].error).toContain("must be number");

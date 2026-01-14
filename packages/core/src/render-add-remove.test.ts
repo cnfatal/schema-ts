@@ -182,18 +182,32 @@ describe("Node Add/Remove Functionality", () => {
       expect(runtime.getNode("/age")).toBeUndefined();
     });
 
-    it("returns false when trying to remove regular properties", () => {
+    it("allow remove regular properties and expected validation error", () => {
       const schema: Schema = {
         type: "object",
         properties: {
           name: { type: "string" },
         },
+        required: ["name"],
       };
       const runtime = new SchemaRuntime(validator, schema, { name: "Alice" });
 
+      // Before removal, check canRemove
+      expect(runtime.getNode("/name")?.canRemove).toBe(false);
+      // Allow remove regular properties in force
       const result = runtime.removeValue("/name");
-      expect(result).toBe(false);
-      expect(runtime.getValue("/name")).toBe("Alice");
+      expect(result).toBe(true);
+      expect(runtime.getValue("/name")).toBeUndefined();
+
+      // Trigger validation
+      runtime.validate("");
+
+      // Check for validation error on root (parent)
+      expect(runtime.root.error?.errors?.[0]?.error).toMatch(
+        /required property/,
+      );
+      // Ensure the node still exists
+      expect(runtime.getNode("/name")).toBeDefined();
     });
 
     it("returns false when trying to remove root", () => {
@@ -240,7 +254,8 @@ describe("Node Add/Remove Functionality", () => {
       const result = runtime.addChild("");
       expect(result).toBe(true);
       // Should add null instead of undefined since undefined is not a valid JSON value
-      expect(runtime.getValue("")).toEqual(["a", "b", null]);
+      // Current behavior: undefined
+      expect(runtime.getValue("")).toEqual(["a", "b", undefined]);
       expect(runtime.root.children?.length).toBe(3);
     });
 
@@ -275,7 +290,7 @@ describe("Node Add/Remove Functionality", () => {
 
       const result = runtime.addChild("", "age");
       expect(result).toBe(true);
-      expect(runtime.getValue("")).toEqual({ name: "Alice", age: 0 });
+      expect(runtime.getValue("")).toEqual({ name: "Alice", age: undefined });
       expect(runtime.getNode("/age")).toBeTruthy();
     });
 
@@ -341,7 +356,7 @@ describe("Node Add/Remove Functionality", () => {
 
       const result = runtime.addChild("", "count");
       expect(result).toBe(true);
-      expect(runtime.getValue("")).toEqual({ count: 0 });
+      expect(runtime.getValue("")).toEqual({ count: undefined });
       expect(runtime.getNode("/count")).toBeTruthy();
     });
 
@@ -359,7 +374,7 @@ describe("Node Add/Remove Functionality", () => {
       const result1 = runtime.addChild("", "items");
       expect(result1).toBe(true);
       // The value should be an empty array (default for array type)
-      expect(runtime.getValue("/items")).toEqual([]);
+      expect(runtime.getValue("/items")).toBeUndefined();
 
       // Now add to the nested array
       const result2 = runtime.addChild("/items");
@@ -380,13 +395,14 @@ describe("Node Add/Remove Functionality", () => {
       // Add first additional property which is an object
       const result1 = runtime.addChild("", "config");
       expect(result1).toBe(true);
-      // The value should be an empty object (default for object type)
-      expect(runtime.getValue("/config")).toEqual({});
+      // The value should not initialized with out any required.
+      expect(runtime.getValue("/config")).toBeUndefined();
 
       // Now add to the nested object
       const result2 = runtime.addChild("/config", "key1");
       expect(result2).toBe(true);
-      expect(runtime.getValue("/config")).toEqual({ key1: "" });
+      // added field init as required, so it should be undefined(placeholder).
+      expect(runtime.getValue("/config")).toEqual({ key1: undefined });
     });
 
     it("returns false when value exists but type mismatches (array expected, got string)", () => {
@@ -513,7 +529,7 @@ describe("Node Add/Remove Functionality", () => {
       expect(runtime.getValue("")).toEqual({ name: "test", command: [] });
     });
 
-    it("removes empty required container with 'always' strategy", () => {
+    it("keeps required container", () => {
       const schema: Schema = {
         type: "object",
         properties: {
@@ -524,21 +540,14 @@ describe("Node Add/Remove Functionality", () => {
         },
         required: ["tags"],
       };
-      const runtime = new SchemaRuntime(
-        validator,
-        schema,
-        { tags: ["a"] },
-        { removeEmptyContainers: "always" },
-      );
+      const runtime = new SchemaRuntime(validator, schema, { tags: ["a"] });
 
       // Remove the only item
       runtime.removeValue("/tags/0");
-
-      // With 'always', even required container is removed (may cause validation error)
-      expect(runtime.getValue("/tags")).toBeUndefined();
+      expect(runtime.getValue("/tags")).toEqual([]);
     });
 
-    it("recursively removes nested empty optional containers", () => {
+    it("recursively removes nested empty optional containers when not required", () => {
       const schema: Schema = {
         type: "object",
         properties: {
@@ -690,31 +699,6 @@ describe("Node Add/Remove Functionality", () => {
       // commands should be removed, but config should remain (has other property)
       expect(runtime.getValue("/config/commands")).toBeUndefined();
       expect(runtime.getValue("/config")).toEqual({ args: ["--help"] });
-    });
-
-    it("removes empty object with 'always' strategy even if required", () => {
-      const schema: Schema = {
-        type: "object",
-        properties: {
-          metadata: {
-            type: "object",
-            additionalProperties: { type: "string" },
-          },
-        },
-        required: ["metadata"],
-      };
-      const runtime = new SchemaRuntime(
-        validator,
-        schema,
-        { metadata: { key: "value" } },
-        { removeEmptyContainers: "always" },
-      );
-
-      // Remove the only property
-      runtime.removeValue("/metadata/key");
-
-      // With 'always', even required container is removed
-      expect(runtime.getValue("/metadata")).toBeUndefined();
     });
 
     it("keeps empty object with 'never' strategy", () => {

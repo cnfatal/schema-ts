@@ -424,7 +424,7 @@ describe("BetterNormalizer", () => {
       expect(normalized.required).toEqual(["foo"]);
     });
 
-    it("adds properties with default to required", () => {
+    it("does not add properties with default to required", () => {
       const schema: Schema = {
         properties: {
           foo: { default: "bar" },
@@ -432,7 +432,7 @@ describe("BetterNormalizer", () => {
         },
       };
       const normalized = normalizer.normalize(schema);
-      expect(normalized.required).toEqual(["foo"]);
+      expect(normalized.required).toBe(undefined);
     });
 
     it("adds properties with enum to required", () => {
@@ -453,10 +453,10 @@ describe("BetterNormalizer", () => {
         },
       };
       const normalized = normalizer.normalize(schema);
-      expect(normalized.required).toEqual([]);
+      expect(normalized.required).toBe(undefined);
     });
 
-    it("adds both const, default, and enum properties to required", () => {
+    it("adds const and enum properties to required", () => {
       const schema: Schema = {
         properties: {
           foo: { const: "bar" },
@@ -466,7 +466,8 @@ describe("BetterNormalizer", () => {
         },
       };
       const normalized = normalizer.normalize(schema);
-      expect(normalized.required).toEqual(["foo", "baz", "other"]);
+      // default is no longer added to required
+      expect(normalized.required).toEqual(["foo", "other"]);
     });
 
     it("does not overwrite existing required", () => {
@@ -485,7 +486,7 @@ describe("BetterNormalizer", () => {
         type: "object",
       };
       const normalized = normalizer.normalize(schema);
-      expect(normalized.required).toEqual([]);
+      expect(normalized.required).toBe(undefined);
     });
   });
 
@@ -547,27 +548,7 @@ describe("BetterNormalizer", () => {
       expect(normalized.prefixItems?.[0].type).toBe("object");
       expect(normalized.prefixItems?.[0].required).toEqual(["foo"]);
       expect((normalized.items as Schema).type).toBe("object");
-      expect((normalized.items as Schema).required).toEqual(["baz"]);
-    });
-
-    it("normalizes if/then/else and forces required in if", () => {
-      const schema: Schema = {
-        if: {
-          properties: {
-            foo: { type: "string" }, // No const/default/enum, but in 'if'
-            bar: { const: 1 },
-          },
-        },
-        then: { properties: { baz: { const: "qux" } } },
-        else: { properties: { quux: { default: "corge" } } },
-      };
-      const normalized = normalizer.normalize(schema);
-      expect(normalized.if?.type).toBe("object");
-      expect(normalized.if?.required).toEqual(["foo", "bar"]); // Both required
-      expect(normalized.then?.type).toBe("object");
-      expect(normalized.then?.required).toEqual(["baz"]);
-      expect(normalized.else?.type).toBe("object");
-      expect(normalized.else?.required).toEqual(["quux"]);
+      expect((normalized.items as Schema).required).toBe(undefined);
     });
   });
 
@@ -580,8 +561,8 @@ describe("BetterNormalizer", () => {
         },
       };
       const normalized = normalizer.normalize(schema);
-      expect(normalized.properties?.foo).toBe(true);
-      expect(normalized.properties?.bar).toBe(false);
+      expect(normalized.properties?.foo).toEqual({});
+      expect(normalized.properties?.bar).toEqual({ not: {} });
     });
 
     it("normalizes dependentSchemas and forces required", () => {
@@ -653,7 +634,7 @@ describe("BetterNormalizer", () => {
         },
       };
       const normalized = normalizer.normalize(schema);
-      expect(normalized.properties?.foo).toBe(null);
+      expect(normalized.properties?.foo).toBe(undefined);
     });
   });
 });

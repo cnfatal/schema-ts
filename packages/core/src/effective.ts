@@ -37,7 +37,11 @@ export function resolveEffectiveSchema(
           instanceLocation,
           validate,
         );
-        effective = mergeSchema(effective, res.effectiveSchema);
+        effective = mergeSchema(
+          effective,
+          res.effectiveSchema,
+          `${keywordLocation}/then`,
+        );
       }
     } else {
       if (effective.else) {
@@ -49,7 +53,11 @@ export function resolveEffectiveSchema(
           instanceLocation,
           validate,
         );
-        effective = mergeSchema(effective, res.effectiveSchema);
+        effective = mergeSchema(
+          effective,
+          res.effectiveSchema,
+          `${keywordLocation}/else`,
+        );
       }
     }
     // Remove if/then/else to prevent re-evaluation during shallow validation
@@ -60,15 +68,20 @@ export function resolveEffectiveSchema(
   // allOf
   if (effective.allOf) {
     for (const [index, subschema] of effective.allOf.entries()) {
+      const subKeywordLocation = `${keywordLocation}/allOf/${index}`;
       const res = resolveEffectiveSchema(
         validator,
         subschema,
         value,
-        `${keywordLocation}/allOf/${index}`,
+        subKeywordLocation,
         instanceLocation,
         validate,
       );
-      effective = mergeSchema(effective, res.effectiveSchema);
+      effective = mergeSchema(
+        effective,
+        res.effectiveSchema,
+        subKeywordLocation,
+      );
     }
     // Remove allOf to prevent re-evaluation during shallow validation
     const { allOf: _, ...rest } = effective;
@@ -78,10 +91,11 @@ export function resolveEffectiveSchema(
   // anyOf
   if (effective.anyOf) {
     for (const [index, subschema] of effective.anyOf.entries()) {
+      const subKeywordLocation = `${keywordLocation}/anyOf/${index}`;
       const output = validator.validate(
         subschema,
         value,
-        keywordLocation + `/anyOf/` + index,
+        subKeywordLocation,
         instanceLocation,
       );
       if (output.valid) {
@@ -89,11 +103,15 @@ export function resolveEffectiveSchema(
           validator,
           subschema,
           value,
-          keywordLocation + `/anyOf/` + index,
+          subKeywordLocation,
           instanceLocation,
           validate,
         );
-        effective = mergeSchema(effective, res.effectiveSchema);
+        effective = mergeSchema(
+          effective,
+          res.effectiveSchema,
+          subKeywordLocation,
+        );
       }
     }
     // Remove anyOf to prevent re-evaluation during shallow validation
@@ -105,6 +123,7 @@ export function resolveEffectiveSchema(
   if (effective.oneOf) {
     let validCount = 0;
     let lastValidSchema: Schema | null = null;
+    let lastValidIndex = -1;
     for (const [index, subschema] of effective.oneOf.entries()) {
       const output = validator.validate(
         subschema,
@@ -115,10 +134,15 @@ export function resolveEffectiveSchema(
       if (output.valid) {
         validCount++;
         lastValidSchema = subschema;
+        lastValidIndex = index;
       }
     }
     if (validCount === 1 && lastValidSchema) {
-      effective = mergeSchema(effective, lastValidSchema);
+      effective = mergeSchema(
+        effective,
+        lastValidSchema,
+        `${keywordLocation}/oneOf/${lastValidIndex}`,
+      );
     }
     // Remove oneOf to prevent re-evaluation during shallow validation
     const { oneOf: _, ...rest } = effective;
@@ -202,32 +226,64 @@ function mergeSchemaArrays(a?: Schema[], b?: Schema[]): Schema[] | undefined {
 /**
  * Merge schema maps (properties, patternProperties, etc.)
  * Recursive merge for overlapping keys.
+ * @param overrideOrigin - The keywordLocation origin for the override schema map
  */
 function mergeSchemaMap(
   base?: Record<string, Schema>,
   override?: Record<string, Schema>,
+  overrideOrigin?: string,
 ): Record<string, Schema> | undefined {
-  if (base === undefined) return override;
+  if (base === undefined) {
+    if (override === undefined) return undefined;
+    // Set x-origin-keyword for each schema in override
+    if (overrideOrigin) {
+      const result: Record<string, Schema> = {};
+      for (const [key, schema] of Object.entries(override)) {
+        result[key] = {
+          ...schema,
+          "x-origin-keyword": `${overrideOrigin}/${key}`,
+        };
+      }
+      return result;
+    }
+    return override;
+  }
   if (override === undefined) return base;
 
   const merged = { ...base };
   for (const [key, schema] of Object.entries(override)) {
+    const childOrigin = overrideOrigin ? `${overrideOrigin}/${key}` : undefined;
     if (merged[key]) {
-      merged[key] = mergeSchema(merged[key], schema);
+      merged[key] = mergeSchema(merged[key], schema, childOrigin);
     } else {
-      merged[key] = schema;
+      merged[key] = childOrigin
+        ? { ...schema, "x-origin-keyword": childOrigin }
+        : schema;
     }
   }
   return merged;
 }
 
-export function mergeSchema(base: Schema, override?: Schema): Schema {
+/**
+ * Merge two schemas together.
+ * @param overrideOrigin - The keywordLocation origin for the override schema (e.g., "#/allOf/0")
+ */
+export function mergeSchema(
+  base: Schema,
+  override?: Schema,
+  overrideOrigin?: string,
+): Schema {
   if (!override) return base;
 
   const merged: Schema = {
     ...base,
     ...override,
   };
+
+  // Set x-origin-keyword to track the source of this merged schema
+  if (overrideOrigin) {
+    merged["x-origin-keyword"] = overrideOrigin;
+  }
 
   // $defs: merge definitions
   if (base.$defs || override.$defs) {
@@ -258,27 +314,41 @@ export function mergeSchema(base: Schema, override?: Schema): Schema {
   }
 
   // properties: merge objects (recursive merge for overlapping keys)
-  const mergedProperties = mergeSchemaMap(base.properties, override.properties);
+  const propertiesOrigin = overrideOrigin
+    ? `${overrideOrigin}/properties`
+    : undefined;
+  const mergedProperties = mergeSchemaMap(
+    base.properties,
+    override.properties,
+    propertiesOrigin,
+  );
   if (mergedProperties !== undefined) {
     merged.properties = mergedProperties;
   }
 
   // patternProperties: merge objects (recursive merge for overlapping patterns)
+  const patternPropertiesOrigin = overrideOrigin
+    ? `${overrideOrigin}/patternProperties`
+    : undefined;
   const mergedPatternProperties = mergeSchemaMap(
     base.patternProperties,
     override.patternProperties,
+    patternPropertiesOrigin,
   );
   if (mergedPatternProperties !== undefined) {
     merged.patternProperties = mergedPatternProperties;
   }
 
   // items: merge recursively
+  const itemsOrigin = overrideOrigin ? `${overrideOrigin}/items` : undefined;
   if (base.items && override.items) {
-    merged.items = mergeSchema(base.items, override.items);
+    merged.items = mergeSchema(base.items, override.items, itemsOrigin);
   } else if (base.items) {
     merged.items = base.items;
   } else if (override.items) {
-    merged.items = override.items;
+    merged.items = itemsOrigin
+      ? { ...override.items, "x-origin-keyword": itemsOrigin }
+      : override.items;
   }
 
   // prefixItems: merge with pairwise merge
@@ -291,13 +361,21 @@ export function mergeSchema(base: Schema, override?: Schema): Schema {
     for (let i = 0; i < len; i++) {
       const baseSchema = base.prefixItems?.[i];
       const overrideSchema = override.prefixItems?.[i];
+      const prefixItemOrigin = overrideOrigin
+        ? `${overrideOrigin}/prefixItems/${i}`
+        : undefined;
       if (baseSchema && overrideSchema) {
-        merged.prefixItems.push(mergeSchema(baseSchema, overrideSchema));
-      } else {
-        const schema = baseSchema || overrideSchema;
-        if (schema) {
-          merged.prefixItems.push(schema);
-        }
+        merged.prefixItems.push(
+          mergeSchema(baseSchema, overrideSchema, prefixItemOrigin),
+        );
+      } else if (overrideSchema) {
+        merged.prefixItems.push(
+          prefixItemOrigin
+            ? { ...overrideSchema, "x-origin-keyword": prefixItemOrigin }
+            : overrideSchema,
+        );
+      } else if (baseSchema) {
+        merged.prefixItems.push(baseSchema);
       }
     }
   }
@@ -316,9 +394,13 @@ export function mergeSchema(base: Schema, override?: Schema): Schema {
   // This is intentional as conditional schemas are context-dependent
 
   // dependentSchemas: merge objects (recursive merge for overlapping keys)
+  const dependentSchemasOrigin = overrideOrigin
+    ? `${overrideOrigin}/dependentSchemas`
+    : undefined;
   const mergedDependentSchemas = mergeSchemaMap(
     base.dependentSchemas,
     override.dependentSchemas,
+    dependentSchemasOrigin,
   );
   if (mergedDependentSchemas !== undefined) {
     merged.dependentSchemas = mergedDependentSchemas;

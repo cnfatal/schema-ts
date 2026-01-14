@@ -21,6 +21,7 @@ describe("SchemaRuntime Basic", () => {
   it("handles type mismatch", () => {
     const schema: Schema = { type: "number" };
     const runtime = new SchemaRuntime(validator, schema, "hello");
+    runtime.validate("");
     expect(runtime.root.error).toBeDefined();
     expect(runtime.root.error?.valid).toBe(false);
     expect(runtime.root.error?.errors?.[0].error).toContain("must be number");

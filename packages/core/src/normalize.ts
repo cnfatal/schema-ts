@@ -201,9 +201,6 @@ function normalizeDraft07(schema: Schema): void {
       // So this is fine.
       delete legacy.items;
     }
-  } else if ("additionalItems" in legacy) {
-    // additionalItems without array items - just remove it as it has no effect
-    delete legacy.additionalItems;
   }
 
   // dependencies → dependentRequired / dependentSchemas
@@ -316,20 +313,22 @@ function normalizeNestedSchemas(
   // Properties
   if (schema.properties) {
     schema.properties = Object.fromEntries(
-      Object.entries(schema.properties).map(([key, subSchema]) => [
-        key,
-        normalizeSchema(subSchema, options),
-      ]),
+      Object.entries(schema.properties)
+        .filter(
+          ([_, subSchema]) => subSchema !== null && subSchema !== undefined,
+        )
+        .map(([key, subSchema]) => [key, normalizeSchema(subSchema, options)]),
     );
   }
 
   // Pattern properties
   if (schema.patternProperties) {
     schema.patternProperties = Object.fromEntries(
-      Object.entries(schema.patternProperties).map(([key, subSchema]) => [
-        key,
-        normalizeSchema(subSchema, options),
-      ]),
+      Object.entries(schema.patternProperties)
+        .filter(
+          ([_, subSchema]) => subSchema !== null && subSchema !== undefined,
+        )
+        .map(([key, subSchema]) => [key, normalizeSchema(subSchema, options)]),
     );
   }
 
@@ -393,10 +392,11 @@ function normalizeNestedSchemas(
   // Dependent schemas
   if (schema.dependentSchemas) {
     schema.dependentSchemas = Object.fromEntries(
-      Object.entries(schema.dependentSchemas).map(([key, subSchema]) => [
-        key,
-        normalizeSchema(subSchema, options),
-      ]),
+      Object.entries(schema.dependentSchemas)
+        .filter(
+          ([_, subSchema]) => subSchema !== null && subSchema !== undefined,
+        )
+        .map(([key, subSchema]) => [key, normalizeSchema(subSchema, options)]),
     );
   }
 
@@ -522,7 +522,9 @@ export class BetterNormalizer implements Normalizer {
           required.push(key);
         }
       }
-      schema.required = required;
+      if (required.length > 0) {
+        schema.required = required;
+      }
     }
 
     // OpenAPI discriminator required

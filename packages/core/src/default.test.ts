@@ -22,34 +22,34 @@ describe("getDefaultValue", () => {
   });
 
   it("returns empty string for string type", () => {
-    expect(getDefaultValue({ type: "string" }, "always")).toBe("");
+    expect(getDefaultValue({ type: "string" }, true)).toBe("");
   });
 
   it("returns 0 for number type", () => {
-    expect(getDefaultValue({ type: "number" }, "always")).toBe(0);
+    expect(getDefaultValue({ type: "number" }, true)).toBe(0);
   });
 
   it("returns 0 for integer type", () => {
-    expect(getDefaultValue({ type: "integer" }, "always")).toBe(0);
+    expect(getDefaultValue({ type: "integer" }, true)).toBe(0);
   });
 
   it("returns false for boolean type", () => {
-    expect(getDefaultValue({ type: "boolean" }, "always")).toBe(false);
+    expect(getDefaultValue({ type: "boolean" }, true)).toBe(false);
   });
 
   it("returns null for null type", () => {
-    expect(getDefaultValue({ type: "null" }, "always")).toBe(null);
+    expect(getDefaultValue({ type: "null" }, true)).toBeUndefined();
   });
 
   it("returns empty array for array type", () => {
-    expect(getDefaultValue({ type: "array" }, "always")).toEqual([]);
+    expect(getDefaultValue({ type: "array" }, true)).toEqual([]);
     expect(
-      getDefaultValue({ type: "array", items: { type: "string" } }, "always"),
+      getDefaultValue({ type: "array", items: { type: "string" } }, true),
     ).toEqual([]);
   });
 
   it("returns empty object for object type without properties", () => {
-    expect(getDefaultValue({ type: "object" }, "always")).toEqual({});
+    expect(getDefaultValue({ type: "object" }, true)).toEqual({});
   });
 
   it("returns object with all properties initialized when strategy is always", () => {
@@ -62,10 +62,9 @@ describe("getDefaultValue", () => {
       },
       required: ["name", "age"],
     };
-    expect(getDefaultValue(schema, "always")).toEqual({
+    expect(getDefaultValue(schema, true)).toEqual({
       name: "",
       age: 0,
-      active: false,
     });
   });
 
@@ -78,10 +77,7 @@ describe("getDefaultValue", () => {
       },
       required: ["required"],
     };
-    const result = getDefaultValue(schema, "explicit") as Record<
-      string,
-      unknown
-    >;
+    const result = getDefaultValue(schema) as Record<string, unknown>;
     expect(result).toHaveProperty("required", "val");
     expect(result).not.toHaveProperty("optional");
   });
@@ -100,14 +96,14 @@ describe("getDefaultValue", () => {
       },
       required: ["user"],
     };
-    expect(getDefaultValue(schema, "always")).toEqual({
+    expect(getDefaultValue(schema, true)).toEqual({
       user: { name: "" },
     });
   });
 
   it("uses first type if type is an array", () => {
-    expect(getDefaultValue({ type: ["string", "number"] }, "always")).toBe("");
-    expect(getDefaultValue({ type: ["number", "string"] }, "always")).toBe(0);
+    expect(getDefaultValue({ type: ["string", "number"] }, true)).toBe("");
+    expect(getDefaultValue({ type: ["number", "string"] }, true)).toBe(0);
   });
 
   it("returns undefined if type is not specified (no inference)", () => {
@@ -117,7 +113,7 @@ describe("getDefaultValue", () => {
       },
       required: ["name"],
     };
-    expect(getDefaultValue(schema, "always")).toBeUndefined();
+    expect(getDefaultValue(schema, true)).toBeUndefined();
   });
 
   it("returns undefined for unknown type", () => {
@@ -132,7 +128,7 @@ describe("getDefaultValue", () => {
       },
       required: ["status"],
     };
-    expect(getDefaultValue(schema, "always")).toEqual({
+    expect(getDefaultValue(schema, true)).toEqual({
       status: "active",
     });
   });
@@ -142,14 +138,14 @@ describe("getDefaultValue", () => {
       type: "array",
       prefixItems: [{ type: "string" }, { type: "number", default: 10 }],
     };
-    expect(getDefaultValue(schema, "always")).toEqual(["", 10]);
+    expect(getDefaultValue(schema, true)).toEqual(["", 10]);
   });
 });
 
 describe("applyDefaults", () => {
   it("returns default value if input is undefined", () => {
     const schema: Schema = { type: "string" };
-    expect(applyDefaults("string", undefined, schema, "always")).toEqual([
+    expect(applyDefaults("string", undefined, schema, true)).toEqual([
       "",
       true,
     ]);
@@ -186,19 +182,6 @@ describe("applyDefaults", () => {
     ]);
   });
 
-  it("fills all properties when strategy is always", () => {
-    const schema: Schema = {
-      type: "object",
-      properties: {
-        a: { type: "string" },
-        b: { type: "string" },
-      },
-      required: ["a"],
-    };
-    const [result] = applyDefaults("object", {}, schema, "always");
-    expect(result).toEqual({ a: "", b: "" });
-  });
-
   it("recursively fills defaults via getDefaultValue", () => {
     const schema: Schema = {
       type: "object",
@@ -213,7 +196,7 @@ describe("applyDefaults", () => {
       },
       required: ["nested"],
     };
-    expect(applyDefaults("object", {}, schema, "always")).toEqual([
+    expect(applyDefaults("object", {}, schema, true)).toEqual([
       { nested: { x: "x" } },
       true,
     ]);

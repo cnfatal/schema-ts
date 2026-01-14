@@ -29,6 +29,8 @@ export interface FieldNode {
   children?: FieldNode[];
   instanceLocation: string;
   keywordLocation: string;
+  // Original keyword location tracking the source of this schema (e.g., from allOf, anyOf, if/then/else)
+  originKeywordLocation?: string;
   version: number;
   // Absolute paths this node's effective schema depends on
   dependencies?: Set<string>;
@@ -402,9 +404,7 @@ export class SchemaRuntime {
     const value = this.getValue(path);
     const isEmpty =
       value === null ||
-      (typeof value === "object" &&
-        !Array.isArray(value) &&
-        Object.keys(value).length === 0);
+      (typeof value === "object" && Object.keys(value).length === 0);
 
     if (!isEmpty) {
       return path;
@@ -733,6 +733,11 @@ export class SchemaRuntime {
         );
       }
       childNode.keywordLocation = childkeywordLocation;
+      // Use x-origin-keyword from schema if available, otherwise use the constructed keywordLocation
+      childNode.originKeywordLocation =
+        typeof childSchema["x-origin-keyword"] === "string"
+          ? childSchema["x-origin-keyword"]
+          : childkeywordLocation;
       childNode.canRemove = canRemove;
       childNode.required = isRequired;
       this.buildNode(childNode, childSchema, { ...options });
