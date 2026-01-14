@@ -326,12 +326,13 @@ export function dereferenceSchemaDeep(
 export function getSubSchema(
   schema: Schema,
   key: string,
-): { schema: Schema; keywordLocationToken: string } {
+): { schema: Schema; keywordLocationToken: string; required: boolean } {
   // Object properties
   if (schema.properties && schema.properties[key]) {
     return {
       schema: schema.properties[key],
       keywordLocationToken: `properties/${key}`,
+      required: schema.required?.includes(key) || false,
     };
   }
 
@@ -344,6 +345,7 @@ export function getSubSchema(
         return {
           schema: subschema,
           keywordLocationToken: `patternProperties/${pattern}`,
+          required: false,
         };
       }
     }
@@ -360,6 +362,7 @@ export function getSubSchema(
           ? schema.additionalProperties
           : {},
       keywordLocationToken: "additionalProperties",
+      required: false,
     };
   }
 
@@ -371,12 +374,16 @@ export function getSubSchema(
         return {
           schema: schema.prefixItems[index],
           keywordLocationToken: `prefixItems/${index}`,
+          required: true, // prefixItems are always required
         };
       }
       if (schema.items) {
         return {
           schema: schema.items,
           keywordLocationToken: "items",
+          // items beyond prefixItems are not required by default
+          // but usually new item is considered required to hold the place
+          required: true,
         };
       }
     }
@@ -385,5 +392,6 @@ export function getSubSchema(
   return {
     schema: {},
     keywordLocationToken: "",
+    required: false,
   };
 }

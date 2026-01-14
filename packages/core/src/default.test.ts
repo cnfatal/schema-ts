@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Schema } from "./type";
-import { getDefaultValue } from "./default";
+import { getDefaultValue, applyDefaults } from "./default";
 
 describe("getDefaultValue", () => {
   it("returns const value if defined", () => {
@@ -22,52 +22,37 @@ describe("getDefaultValue", () => {
   });
 
   it("returns empty string for string type", () => {
-    expect(getDefaultValue({ type: "string" }, { strategy: "always" })).toBe(
-      "",
-    );
+    expect(getDefaultValue({ type: "string" }, "always")).toBe("");
   });
 
   it("returns 0 for number type", () => {
-    expect(getDefaultValue({ type: "number" }, { strategy: "always" })).toBe(0);
+    expect(getDefaultValue({ type: "number" }, "always")).toBe(0);
   });
 
   it("returns 0 for integer type", () => {
-    expect(getDefaultValue({ type: "integer" }, { strategy: "always" })).toBe(
-      0,
-    );
+    expect(getDefaultValue({ type: "integer" }, "always")).toBe(0);
   });
 
   it("returns false for boolean type", () => {
-    expect(getDefaultValue({ type: "boolean" }, { strategy: "always" })).toBe(
-      false,
-    );
+    expect(getDefaultValue({ type: "boolean" }, "always")).toBe(false);
   });
 
   it("returns null for null type", () => {
-    expect(getDefaultValue({ type: "null" }, { strategy: "always" })).toBe(
-      null,
-    );
+    expect(getDefaultValue({ type: "null" }, "always")).toBe(null);
   });
 
   it("returns empty array for array type", () => {
-    expect(getDefaultValue({ type: "array" }, { strategy: "always" })).toEqual(
-      [],
-    );
+    expect(getDefaultValue({ type: "array" }, "always")).toEqual([]);
     expect(
-      getDefaultValue(
-        { type: "array", items: { type: "string" } },
-        { strategy: "always" },
-      ),
+      getDefaultValue({ type: "array", items: { type: "string" } }, "always"),
     ).toEqual([]);
   });
 
   it("returns empty object for object type without properties", () => {
-    expect(getDefaultValue({ type: "object" }, { strategy: "always" })).toEqual(
-      {},
-    );
+    expect(getDefaultValue({ type: "object" }, "always")).toEqual({});
   });
 
-  it("returns object with required properties initialized", () => {
+  it("returns object with all properties initialized when strategy is always", () => {
     const schema: Schema = {
       type: "object",
       properties: {
@@ -77,26 +62,27 @@ describe("getDefaultValue", () => {
       },
       required: ["name", "age"],
     };
-    expect(getDefaultValue(schema, { strategy: "always" })).toEqual({
+    expect(getDefaultValue(schema, "always")).toEqual({
       name: "",
       age: 0,
+      active: false,
     });
   });
 
-  it("does not include optional properties", () => {
+  it("returns object with only required properties when strategy is explicit", () => {
     const schema: Schema = {
       type: "object",
       properties: {
-        required: { type: "string" },
-        optional: { type: "string" },
+        required: { type: "string", default: "val" },
+        optional: { type: "string", default: "opt" },
       },
       required: ["required"],
     };
-    const result = getDefaultValue(schema, { strategy: "always" }) as Record<
+    const result = getDefaultValue(schema, "explicit") as Record<
       string,
       unknown
     >;
-    expect(result).toHaveProperty("required");
+    expect(result).toHaveProperty("required", "val");
     expect(result).not.toHaveProperty("optional");
   });
 
@@ -114,30 +100,24 @@ describe("getDefaultValue", () => {
       },
       required: ["user"],
     };
-    expect(getDefaultValue(schema, { strategy: "always" })).toEqual({
+    expect(getDefaultValue(schema, "always")).toEqual({
       user: { name: "" },
     });
   });
 
   it("uses first type if type is an array", () => {
-    expect(
-      getDefaultValue({ type: ["string", "number"] }, { strategy: "always" }),
-    ).toBe("");
-    expect(
-      getDefaultValue({ type: ["number", "string"] }, { strategy: "always" }),
-    ).toBe(0);
+    expect(getDefaultValue({ type: ["string", "number"] }, "always")).toBe("");
+    expect(getDefaultValue({ type: ["number", "string"] }, "always")).toBe(0);
   });
 
-  it("infers object type from properties", () => {
+  it("returns undefined if type is not specified (no inference)", () => {
     const schema: Schema = {
       properties: {
         name: { type: "string" },
       },
       required: ["name"],
     };
-    expect(getDefaultValue(schema, { strategy: "always" })).toEqual({
-      name: "",
-    });
+    expect(getDefaultValue(schema, "always")).toBeUndefined();
   });
 
   it("returns undefined for unknown type", () => {
@@ -152,7 +132,7 @@ describe("getDefaultValue", () => {
       },
       required: ["status"],
     };
-    expect(getDefaultValue(schema, { strategy: "always" })).toEqual({
+    expect(getDefaultValue(schema, "always")).toEqual({
       status: "active",
     });
   });
@@ -162,23 +142,17 @@ describe("getDefaultValue", () => {
       type: "array",
       prefixItems: [{ type: "string" }, { type: "number", default: 10 }],
     };
-    expect(getDefaultValue(schema, { strategy: "always" })).toEqual(["", 10]);
+    expect(getDefaultValue(schema, "always")).toEqual(["", 10]);
   });
+});
 
-  it("returns default value if input is undefined (with value arg)", () => {
-    expect(getDefaultValue({ type: "string" }, { strategy: "always" })).toBe(
+describe("applyDefaults", () => {
+  it("returns default value if input is undefined", () => {
+    const schema: Schema = { type: "string" };
+    expect(applyDefaults("string", undefined, schema, "always")).toEqual([
       "",
-    );
-    expect(
-      getDefaultValue(
-        {
-          type: "object",
-          properties: { a: { type: "string" } },
-          required: ["a"],
-        },
-        { strategy: "always" },
-      ),
-    ).toEqual({ a: "" });
+      true,
+    ]);
   });
 
   it("fills missing required properties in object", () => {
@@ -190,14 +164,42 @@ describe("getDefaultValue", () => {
       },
       required: ["a"],
     };
-    expect(getDefaultValue(schema, { value: {} })).toEqual({ a: "default" });
-    expect(getDefaultValue(schema, { value: { b: 1 } })).toEqual({
-      a: "default",
-      b: 1,
-    });
+    expect(applyDefaults("object", {}, schema)).toEqual([
+      { a: "default" },
+      true,
+    ]);
+    expect(applyDefaults("object", { b: 1 }, schema)).toEqual([
+      { a: "default", b: 1 },
+      true,
+    ]);
   });
 
-  it("recursively fills defaults", () => {
+  it("returns same value and false if no changes needed", () => {
+    const schema: Schema = {
+      type: "object",
+      properties: { a: { default: 1 } },
+      required: ["a"],
+    };
+    expect(applyDefaults("object", { a: 2 }, schema)).toEqual([
+      { a: 2 },
+      false,
+    ]);
+  });
+
+  it("fills all properties when strategy is always", () => {
+    const schema: Schema = {
+      type: "object",
+      properties: {
+        a: { type: "string" },
+        b: { type: "string" },
+      },
+      required: ["a"],
+    };
+    const [result] = applyDefaults("object", {}, schema, "always");
+    expect(result).toEqual({ a: "", b: "" });
+  });
+
+  it("recursively fills defaults via getDefaultValue", () => {
     const schema: Schema = {
       type: "object",
       properties: {
@@ -211,34 +213,13 @@ describe("getDefaultValue", () => {
       },
       required: ["nested"],
     };
-    expect(getDefaultValue(schema, { value: {}, strategy: "always" })).toEqual({
-      nested: { x: "x" },
-    });
-    expect(
-      getDefaultValue(schema, { value: { nested: {} }, strategy: "always" }),
-    ).toEqual({
-      nested: { x: "x" },
-    });
-  });
-
-  it("fills defaults in array items", () => {
-    const schema: Schema = {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          a: { type: "string", default: "filled" },
-        },
-        required: ["a"],
-      },
-    };
-    expect(getDefaultValue(schema, { value: [{}, { a: "exists" }] })).toEqual([
-      { a: "filled" },
-      { a: "exists" },
+    expect(applyDefaults("object", {}, schema, "always")).toEqual([
+      { nested: { x: "x" } },
+      true,
     ]);
   });
 
-  it("fills defaults in tuple items (prefixItems)", () => {
+  it("fills defaults in tuple items (prefixItems) when items are undefined", () => {
     const schema: Schema = {
       type: "array",
       prefixItems: [
@@ -254,9 +235,24 @@ describe("getDefaultValue", () => {
         },
       ],
     };
-    expect(getDefaultValue(schema, { value: [{}, {}] })).toEqual([
-      { a: "A" },
-      { b: "B" },
+    expect(applyDefaults("array", [undefined, undefined], schema)).toEqual([
+      [{ a: "A" }, { b: "B" }],
+      true,
     ]);
+  });
+
+  it("does not deep fill if array items already exist", () => {
+    const schema: Schema = {
+      type: "array",
+      prefixItems: [
+        {
+          type: "object",
+          properties: { a: { type: "string", default: "A" } },
+          required: ["a"],
+        },
+      ],
+    };
+    // applyDefaults is shallow for existing items
+    expect(applyDefaults("array", [{}], schema)).toEqual([[{}], false]);
   });
 });

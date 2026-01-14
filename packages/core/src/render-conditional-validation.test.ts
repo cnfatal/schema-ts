@@ -35,13 +35,13 @@ describe("Conditional Schema Validation Error Clearing", () => {
       });
 
       // Should have error: value should be string
-      let valueNode = runtime.findNode("/value");
+      let valueNode = runtime.getNode("/value");
       expect(valueNode?.error).toBeDefined();
       expect(valueNode?.error?.valid).toBe(false);
 
       // Change mode to "number" -> value: number is now valid
       runtime.setValue("/mode", "number");
-      valueNode = runtime.findNode("/value");
+      valueNode = runtime.getNode("/value");
       expect(valueNode?.error).toBeUndefined();
     });
 
@@ -73,13 +73,13 @@ describe("Conditional Schema Validation Error Clearing", () => {
       });
 
       // Should have error: plan not in ["gold", "platinum"]
-      let planNode = runtime.findNode("/plan");
+      let planNode = runtime.getNode("/plan");
       expect(planNode?.error).toBeDefined();
       expect(planNode?.error?.valid).toBe(false);
 
       // Change tier to "basic" -> plan="free" is now valid
       runtime.setValue("/tier", "basic");
-      planNode = runtime.findNode("/plan");
+      planNode = runtime.getNode("/plan");
       expect(planNode?.error).toBeUndefined();
     });
 
@@ -111,13 +111,13 @@ describe("Conditional Schema Validation Error Clearing", () => {
       });
 
       // Should have error: id doesn't match ^[0-9]+$
-      let idNode = runtime.findNode("/id");
+      let idNode = runtime.getNode("/id");
       expect(idNode?.error).toBeDefined();
       expect(idNode?.error?.valid).toBe(false);
 
       // Change idFormat to "alpha" -> id="ABC" now matches ^[A-Z]+$
       runtime.setValue("/idFormat", "alpha");
-      idNode = runtime.findNode("/id");
+      idNode = runtime.getNode("/id");
       expect(idNode?.error).toBeUndefined();
     });
 
@@ -149,13 +149,13 @@ describe("Conditional Schema Validation Error Clearing", () => {
       });
 
       // Should have error: age exceeds maximum 17
-      let ageNode = runtime.findNode("/age");
+      let ageNode = runtime.getNode("/age");
       expect(ageNode?.error).toBeDefined();
       expect(ageNode?.error?.valid).toBe(false);
 
       // Change ageGroup to "adult" -> age=25 is now valid (18-120)
       runtime.setValue("/ageGroup", "adult");
-      ageNode = runtime.findNode("/age");
+      ageNode = runtime.getNode("/age");
       expect(ageNode?.error).toBeUndefined();
     });
 
@@ -187,13 +187,13 @@ describe("Conditional Schema Validation Error Clearing", () => {
       });
 
       // Should have error: text too short
-      let textNode = runtime.findNode("/text");
+      let textNode = runtime.getNode("/text");
       expect(textNode?.error).toBeDefined();
       expect(textNode?.error?.valid).toBe(false);
 
       // Change stringType to "short" -> text="short" is now valid (minLength: 1)
       runtime.setValue("/stringType", "short");
-      textNode = runtime.findNode("/text");
+      textNode = runtime.getNode("/text");
       expect(textNode?.error).toBeUndefined();
     });
 
@@ -237,19 +237,19 @@ describe("Conditional Schema Validation Error Clearing", () => {
       });
 
       // Should have error: value below minimum 100
-      let valueNode = runtime.findNode("/value");
+      let valueNode = runtime.getNode("/value");
       expect(valueNode?.error).toBeDefined();
       expect(valueNode?.error?.valid).toBe(false);
 
       // Change enabled to false -> value becomes string type, 50 is invalid
       runtime.setValue("/enabled", false);
-      valueNode = runtime.findNode("/value");
+      valueNode = runtime.getNode("/value");
       // Now value=50 is invalid because it should be string
       expect(valueNode?.error).toBeDefined();
 
       // Set value to string -> now valid
       runtime.setValue("/value", "some text");
-      valueNode = runtime.findNode("/value");
+      valueNode = runtime.getNode("/value");
       expect(valueNode?.error).toBeUndefined();
     });
 
@@ -288,13 +288,13 @@ describe("Conditional Schema Validation Error Clearing", () => {
       });
 
       // Should have error: count below minimum 100
-      let countNode = runtime.findNode("/count");
+      let countNode = runtime.getNode("/count");
       expect(countNode?.error).toBeDefined();
       expect(countNode?.error?.valid).toBe(false);
 
       // Change level to "low" -> count=10 is now valid (minimum: 1)
       runtime.setValue("/level", "low");
-      countNode = runtime.findNode("/count");
+      countNode = runtime.getNode("/count");
       expect(countNode?.error).toBeUndefined();
     });
   });

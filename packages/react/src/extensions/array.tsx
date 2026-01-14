@@ -43,7 +43,7 @@ export const arrayExtension = (
           items,
           canAdd: props.canAdd,
           onAdd: () => {
-            runtime.addValue(instanceLocation);
+            runtime.addChild(instanceLocation);
           },
         };
       }

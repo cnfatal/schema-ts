@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { normalizeSchema } from "./normalize";
+import { normalizeSchema, BetterNormalizer } from "./normalize";
 import { detectSchemaDraft } from "./version";
 import { validateSchema } from "./validate";
+import type { Schema } from "./type";
 
 describe("detectSchemaDraft", () => {
   it("detects draft-2020-12 from $schema", () => {
@@ -347,6 +348,312 @@ describe("normalizeSchema", () => {
       const normalized = normalizeSchema(schema, { sourceDraft: "draft-04" });
       expect(normalized.$ref).toBe("#/definitions/foo");
       expect(normalized.description).toBeUndefined();
+    });
+  });
+});
+
+describe("BetterNormalizer", () => {
+  const normalizer = new BetterNormalizer();
+
+  describe("type inference", () => {
+    it("infers type: 'object' from properties", () => {
+      const schema: Schema = {
+        properties: {
+          foo: { type: "string" },
+        },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.type).toBe("object");
+    });
+
+    it("infers type: 'object' from patternProperties", () => {
+      const schema: Schema = {
+        patternProperties: {
+          "^f": { type: "string" },
+        },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.type).toBe("object");
+    });
+
+    it("infers type: 'object' from additionalProperties", () => {
+      const schema: Schema = {
+        additionalProperties: { type: "string" },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.type).toBe("object");
+    });
+
+    it("infers type: 'array' from items", () => {
+      const schema: Schema = {
+        items: { type: "string" },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.type).toBe("array");
+    });
+
+    it("infers type: 'array' from additionalItems", () => {
+      const schema: any = {
+        additionalItems: { type: "string" },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.type).toBe("array");
+    });
+
+    it("does not overwrite existing type", () => {
+      const schema: Schema = {
+        type: "string",
+        properties: {
+          foo: { type: "string" },
+        },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.type).toBe("string");
+    });
+  });
+
+  describe("required inference", () => {
+    it("adds properties with const to required", () => {
+      const schema: Schema = {
+        properties: {
+          foo: { const: "bar" },
+          baz: { type: "string" },
+        },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.required).toEqual(["foo"]);
+    });
+
+    it("adds properties with default to required", () => {
+      const schema: Schema = {
+        properties: {
+          foo: { default: "bar" },
+          baz: { type: "string" },
+        },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.required).toEqual(["foo"]);
+    });
+
+    it("adds properties with enum to required", () => {
+      const schema: Schema = {
+        properties: {
+          foo: { enum: ["bar", "baz"] },
+          qux: { type: "string" },
+        },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.required).toEqual(["foo"]);
+    });
+
+    it("does not add empty enum to required", () => {
+      const schema: Schema = {
+        properties: {
+          foo: { enum: [] },
+        },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.required).toEqual([]);
+    });
+
+    it("adds both const, default, and enum properties to required", () => {
+      const schema: Schema = {
+        properties: {
+          foo: { const: "bar" },
+          baz: { default: "qux" },
+          other: { enum: [1, 2] },
+          plain: { type: "string" },
+        },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.required).toEqual(["foo", "baz", "other"]);
+    });
+
+    it("does not overwrite existing required", () => {
+      const schema: Schema = {
+        properties: {
+          foo: { const: "bar" },
+        },
+        required: ["other"],
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.required).toEqual(["other"]);
+    });
+
+    it("handles missing properties", () => {
+      const schema: Schema = {
+        type: "object",
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.required).toEqual([]);
+    });
+  });
+
+  describe("recursive normalization", () => {
+    it("normalizes nested properties", () => {
+      const schema: Schema = {
+        properties: {
+          nested: {
+            properties: {
+              foo: { const: "bar" },
+            },
+          },
+        },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.type).toBe("object");
+      expect(normalized.properties?.nested.type).toBe("object");
+      expect(normalized.properties?.nested.required).toEqual(["foo"]);
+    });
+
+    it("normalizes schemas in anyOf", () => {
+      const schema: Schema = {
+        anyOf: [
+          { properties: { foo: { const: "bar" } } },
+          { items: { type: "string" } },
+        ],
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.anyOf?.[0].type).toBe("object");
+      expect(normalized.anyOf?.[0].required).toEqual(["foo"]);
+      expect(normalized.anyOf?.[1].type).toBe("array");
+    });
+
+    it("normalizes schemas in allOf", () => {
+      const schema: Schema = {
+        allOf: [{ properties: { foo: { const: "bar" } } }],
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.allOf?.[0].type).toBe("object");
+      expect(normalized.allOf?.[0].required).toEqual(["foo"]);
+    });
+
+    it("normalizes schemas in oneOf", () => {
+      const schema: Schema = {
+        oneOf: [{ properties: { foo: { const: "bar" } } }],
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.oneOf?.[0].type).toBe("object");
+      expect(normalized.oneOf?.[0].required).toEqual(["foo"]);
+    });
+
+    it("normalizes items and prefixItems", () => {
+      const schema: Schema = {
+        prefixItems: [{ properties: { foo: { const: "bar" } } }],
+        items: { properties: { baz: { default: 1 } } },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.type).toBe("array");
+      expect(normalized.prefixItems?.[0].type).toBe("object");
+      expect(normalized.prefixItems?.[0].required).toEqual(["foo"]);
+      expect((normalized.items as Schema).type).toBe("object");
+      expect((normalized.items as Schema).required).toEqual(["baz"]);
+    });
+
+    it("normalizes if/then/else and forces required in if", () => {
+      const schema: Schema = {
+        if: {
+          properties: {
+            foo: { type: "string" }, // No const/default/enum, but in 'if'
+            bar: { const: 1 },
+          },
+        },
+        then: { properties: { baz: { const: "qux" } } },
+        else: { properties: { quux: { default: "corge" } } },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.if?.type).toBe("object");
+      expect(normalized.if?.required).toEqual(["foo", "bar"]); // Both required
+      expect(normalized.then?.type).toBe("object");
+      expect(normalized.then?.required).toEqual(["baz"]);
+      expect(normalized.else?.type).toBe("object");
+      expect(normalized.else?.required).toEqual(["quux"]);
+    });
+  });
+
+  describe("edge cases", () => {
+    it("handles boolean schemas", () => {
+      const schema = {
+        properties: {
+          foo: true,
+          bar: false,
+        },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.properties?.foo).toBe(true);
+      expect(normalized.properties?.bar).toBe(false);
+    });
+
+    it("normalizes dependentSchemas and forces required", () => {
+      const schema: Schema = {
+        dependentSchemas: {
+          foo: {
+            properties: {
+              bar: { type: "string" },
+            },
+          },
+        },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.dependentSchemas?.foo.type).toBe("object");
+      expect(normalized.dependentSchemas?.foo.required).toEqual(["bar"]);
+    });
+
+    it("handles discriminator property as required", () => {
+      const schema: any = {
+        discriminator: { propertyName: "type" },
+        properties: {
+          type: { type: "string" },
+        },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.required).toContain("type");
+    });
+
+    it("handles x-required on properties", () => {
+      const schema: any = {
+        properties: {
+          foo: { type: "string", "x-required": true },
+        },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.required).toContain("foo");
+    });
+
+    it("handles patternProperties and sets minProperties: 1", () => {
+      const schema: Schema = {
+        patternProperties: {
+          "^S_": { type: "string" },
+        },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.minProperties).toBe(1);
+    });
+
+    it("handles x-kubernetes-patch-merge-key", () => {
+      const schema: any = {
+        type: "array",
+        "x-kubernetes-patch-merge-key": "name",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            value: { type: "string" },
+          },
+        },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect((normalized.items as Schema).required).toContain("name");
+    });
+
+    it("handles null/undefined values in properties", () => {
+      const schema: any = {
+        properties: {
+          foo: null,
+        },
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.properties?.foo).toBe(null);
     });
   });
 });

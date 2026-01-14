@@ -8,7 +8,8 @@ export function resolveEffectiveSchema(
   value: unknown,
   keywordLocation: string,
   instanceLocation: string,
-  isRequired: boolean = true,
+  // should validate the value against the effective schema
+  validate: boolean = false,
 ): {
   effectiveSchema: Schema;
   type: SchemaType;
@@ -24,6 +25,7 @@ export function resolveEffectiveSchema(
       value,
       `${keywordLocation}/if`,
       instanceLocation,
+      { fastFail: true },
     );
     if (output.valid) {
       if (effective.then) {
@@ -33,6 +35,7 @@ export function resolveEffectiveSchema(
           value,
           `${keywordLocation}/then`,
           instanceLocation,
+          validate,
         );
         effective = mergeSchema(effective, res.effectiveSchema);
       }
@@ -44,6 +47,7 @@ export function resolveEffectiveSchema(
           value,
           `${keywordLocation}/else`,
           instanceLocation,
+          validate,
         );
         effective = mergeSchema(effective, res.effectiveSchema);
       }
@@ -62,6 +66,7 @@ export function resolveEffectiveSchema(
         value,
         `${keywordLocation}/allOf/${index}`,
         instanceLocation,
+        validate,
       );
       effective = mergeSchema(effective, res.effectiveSchema);
     }
@@ -86,6 +91,7 @@ export function resolveEffectiveSchema(
           value,
           keywordLocation + `/anyOf/` + index,
           instanceLocation,
+          validate,
         );
         effective = mergeSchema(effective, res.effectiveSchema);
       }
@@ -138,7 +144,8 @@ export function resolveEffectiveSchema(
 
   // For optional properties with undefined values, skip validation
   // but still return the resolved effective schema for UI rendering
-  if (!isRequired && value === undefined) {
+  // FIXME: should remove validate option
+  if (!validate) {
     return {
       effectiveSchema: effective,
       type,

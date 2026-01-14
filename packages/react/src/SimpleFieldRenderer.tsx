@@ -29,8 +29,11 @@ export interface WidgetProps {
   label: string;
   description?: string;
   example?: unknown;
+  /** Is the field required by its parent object schema */
   required?: boolean;
   disabled?: boolean;
+  /** Is the field allowed to be null, schema.type includes "null" */
+  nullable?: boolean;
   error?: string;
   mode?: FormMode;
   /**
@@ -155,31 +158,38 @@ export class SimpleFieldRenderer {
       onChange,
       instanceLocation,
       mode,
+      required,
       ...otherProps
     } = props;
+
+    const renderChild: RenderChild = (path, options) => {
+      return (
+        <FormField
+          key={path}
+          path={path}
+          runtime={runtime}
+          render={this.render}
+          {...options}
+        />
+      );
+    };
+
+    const nullable = Array.isArray(schema.type)
+      ? schema.type.includes("null")
+      : schema.type === "null";
+
     const widgetProps: WidgetProps = {
       label: schema.title || instanceLocation.split("/").pop() || "",
       description: schema.description,
       example: schema.examples?.[0],
+      required,
       disabled: isFieldDisabled(schema, mode),
       error: this.mapErrorMessage(error),
+      nullable,
       mode,
       instanceLocation,
       schema,
-      renderChild: (
-        path: string,
-        options?: Record<string, unknown>,
-      ): React.ReactNode => {
-        return (
-          <FormField
-            key={path}
-            path={path}
-            runtime={runtime}
-            render={this.render}
-            {...options}
-          />
-        );
-      },
+      renderChild,
       value,
       defaultValue: schema.default ?? schema.const,
       onChange,

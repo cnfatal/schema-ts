@@ -8,11 +8,12 @@ import {
   deepEqual,
   parseJsonPointer,
   safeRegexTest,
+  getJsonPointerParent,
 } from "./util";
 import { resolveEffectiveSchema } from "./effective";
 import { dereferenceSchemaDeep, getSubSchema } from "./schema-util";
-import { getDefaultValue } from "./default";
-import { normalizeSchema } from "./normalize";
+import { applyDefaults, getDefaultValue } from "./default";
+import { DraftNormalizer, Normalizer } from "./normalize";
 import type { Validator } from "./validate";
 import { collectDependencies } from "./dependency";
 
@@ -31,24 +32,14 @@ export interface FieldNode {
   version: number;
   // Absolute paths this node's effective schema depends on
   dependencies?: Set<string>;
-
   // Whether this node can be removed (array items, additionalProperties, patternProperties)
   canRemove: boolean;
   // Whether this node can have children added (arrays with items, objects with additionalProperties)
   canAdd: boolean;
   // Whether this node is required by its parent (listed in parent's required array)
-  isRequired: boolean;
-}
-
-/** The canonical representation for root path */
-const ROOT_PATH = "";
-
-/**
- * Normalize path to use consistent root representation.
- * Converts "#" to "" (empty string) for internal consistency.
- */
-function normalizeRootPath(path: string): string {
-  return path === "#" ? ROOT_PATH : path;
+  required: boolean;
+  // Should validate this node
+  activated: boolean;
 }
 
 export type SchemaChangeEvent = {
@@ -60,24 +51,35 @@ export interface SchemaRuntimeOptions {
   /**
    * Control how default values are applied when schema changes.
    * - 'always': Fill all type-based defaults (e.g., [] for array, "" for string)
-   * - 'explicit': Only fill explicitly declared defaults (schema.default)
-   * - 'never': Never auto-fill defaults
-   * @default 'explicit'
+   * - 'auto': Fill defaults by defaulting rules (required fields, const, default keyword etc.)
+   * @default 'auto'
    */
-  autoFillDefaults?: "always" | "explicit" | "never";
+  fillDefaults?: "auto" | "never";
 
   /**
    * Control behavior when removing the last element from an array or object.
    * - 'never': Always keep empty containers ([] or {})
-   * - 'auto': Remove empty container only if the field is optional (not in parent's required array)
-   * - 'always': Always remove empty containers (may cause validation errors for required fields)
+   * - 'auto': Remove empty container only following rules.
    * @default 'auto'
    */
-  removeEmptyContainers?: "never" | "auto" | "always";
+  removeEmptyContainers?: "never" | "auto";
+
+  /**
+   * Custom schema normalizer.
+   * If specified, will use this normalizer instead of the default one.
+   */
+  schemaNormalizer?: Normalizer;
 }
+
+type BuildNodeConfig = {
+  updatedNodes?: Set<string>;
+  setActivated?: boolean;
+};
 
 export class SchemaRuntime {
   private validator: Validator;
+
+  private normalizer: Normalizer;
 
   private watchers: Record<string, Set<(e: SchemaChangeEvent) => void>> = {};
   private globalWatchers: Set<(e: SchemaChangeEvent) => void> = new Set();
@@ -114,19 +116,32 @@ export class SchemaRuntime {
     options: SchemaRuntimeOptions = {},
   ) {
     this.validator = validator;
-    this.value = value;
     this.options = {
-      autoFillDefaults: "explicit",
+      fillDefaults: "auto",
       removeEmptyContainers: "auto",
       ...options,
     };
-
-    const normalized = normalizeSchema(schema);
-
-    this.rootSchema = dereferenceSchemaDeep(normalized, normalized);
+    this.normalizer = options.schemaNormalizer || new DraftNormalizer();
+    this.value = value;
+    this.rootSchema = this.resolveSchema(schema);
     this.root = this.createEmptyNode("", "#");
     this.buildNode(this.root, this.rootSchema);
-    this.notify({ type: "schema", path: ROOT_PATH });
+  }
+
+  private resolveSchema(schema: Schema | unknown): Schema {
+    const normalized = this.normalizer.normalize(schema);
+    const dereferenced = dereferenceSchemaDeep(normalized, normalized);
+    return dereferenced;
+  }
+
+  /**
+   * Update the entire schema.
+   * This triggers a full rebuild of the node tree while preserving the current value.
+   */
+  setSchema(schema: Schema | unknown): void {
+    this.rootSchema = this.resolveSchema(schema);
+    this.root = this.createEmptyNode("", "#");
+    this.buildNode(this.root, this.rootSchema);
   }
 
   /**
@@ -191,8 +206,9 @@ export class SchemaRuntime {
       originalSchema: {},
       canRemove: false,
       canAdd: false,
-      isRequired: false,
+      required: false,
       children: [],
+      activated: false,
     };
   }
 
@@ -201,17 +217,14 @@ export class SchemaRuntime {
    * Uses findNearestExistingNode to find the target node (or parent if path doesn't exist).
    * Only rebuilds the affected subtree, not the entire tree.
    */
-  private reconcile(path: string): void {
-    const normalizedPath = normalizeRootPath(path);
-
+  private reconcile(path: string, config: BuildNodeConfig = {}): void {
     // Find target node (or nearest parent)
-    const targetNode = this.findNearestExistingNode(normalizedPath);
+    const targetNode = this.findNearestExistingNode(path);
     if (!targetNode) {
       return;
     }
-
     // Build node from target path
-    this.buildNode(targetNode, targetNode.originalSchema);
+    this.buildNode(targetNode, targetNode.originalSchema, config);
   }
 
   /**
@@ -240,18 +253,17 @@ export class SchemaRuntime {
    * // Later: unsubscribe();
    */
   subscribe(path: string, cb: (e: SchemaChangeEvent) => void): () => void {
-    const normalizedPath = normalizeRootPath(path);
-    if (!this.watchers[normalizedPath]) {
-      this.watchers[normalizedPath] = new Set();
+    if (!this.watchers[path]) {
+      this.watchers[path] = new Set();
     }
-    this.watchers[normalizedPath].add(cb);
+    this.watchers[path].add(cb);
     return () => {
-      const watcherSet = this.watchers[normalizedPath];
+      const watcherSet = this.watchers[path];
       if (watcherSet) {
         watcherSet.delete(cb);
         // Clean up empty watcher sets to prevent memory leaks
         if (watcherSet.size === 0) {
-          delete this.watchers[normalizedPath];
+          delete this.watchers[path];
         }
       }
     };
@@ -280,8 +292,7 @@ export class SchemaRuntime {
   notify(event: SchemaChangeEvent) {
     this.version++;
 
-    const normalizedPath = normalizeRootPath(event.path);
-    const watchers = this.watchers[normalizedPath];
+    const watchers = this.watchers[event.path];
     if (watchers) {
       for (const cb of watchers) {
         try {
@@ -303,19 +314,6 @@ export class SchemaRuntime {
   }
 
   /**
-   * Update the entire schema.
-   * This triggers a full rebuild of the node tree while preserving the current value.
-   */
-  setSchema(schema: Schema | unknown): void {
-    const normalized = normalizeSchema(schema);
-    this.rootSchema = dereferenceSchemaDeep(normalized, normalized);
-    // Reinitialize root node with new schema
-    this.root = this.createEmptyNode("", "#");
-    this.buildNode(this.root, this.rootSchema);
-    this.notify({ type: "schema", path: ROOT_PATH });
-  }
-
-  /**
    * Get the value at a specific path.
    *
    * @param path - The JSON Pointer path (e.g., "/user/name", "" for root)
@@ -326,25 +324,30 @@ export class SchemaRuntime {
    * runtime.getValue("/name"); // returns value at /name
    */
   getValue(path: string): unknown {
-    const normalizedPath = normalizeRootPath(path);
-    if (normalizedPath === ROOT_PATH) return this.value;
-    return getJsonPointer(this.value, normalizedPath);
+    if (path === "" || path === "#") {
+      return this.value;
+    }
+    return getJsonPointer(this.value, path);
   }
 
   /**
    * Internal helper to set a value at a normalized path.
    * Handles both root and non-root paths.
    *
-   * @param normalizedPath - The normalized JSON Pointer path
+   * @param path - The JSON Pointer path
    * @param value - The value to set
    * @returns true if successful, false if the path cannot be set
    */
-  private setValueAtPath(normalizedPath: string, value: unknown): boolean {
-    if (normalizedPath === ROOT_PATH) {
+  private setJsonPointer(path: string, value: unknown): boolean {
+    if (path === "" || path === "#") {
       this.value = value;
       return true;
     }
-    return setJsonPointer(this.value, normalizedPath, value);
+    // Ensure root value is an object/array if setting non-root path
+    if (!this.value) {
+      this.value = {};
+    }
+    return setJsonPointer(this.value, path, value);
   }
 
   /**
@@ -360,15 +363,10 @@ export class SchemaRuntime {
     if (!success) {
       return false;
     }
-
-    // Find parent path
-    const lastSlash = path.lastIndexOf("/");
-    const parentPath =
-      lastSlash <= 0 ? ROOT_PATH : path.substring(0, lastSlash);
-
     // Cleanup empty parent containers, returns the topmost parent path for reconciliation
-    const reconcilePath = this.cleanupEmptyContainers(parentPath);
-
+    const reconcilePath = this.cleanupEmptyContainers(
+      getJsonPointerParent(path),
+    );
     // Reconcile from parent to rebuild children
     this.reconcile(reconcilePath);
     this.notify({ type: "value", path: reconcilePath });
@@ -383,89 +381,137 @@ export class SchemaRuntime {
    * @returns true if successful, false if the path cannot be removed
    */
   removeValue(path: string): boolean {
-    const normalizedPath = normalizeRootPath(path);
-    if (normalizedPath === ROOT_PATH) {
-      // Cannot remove root
-      return false;
-    }
-
-    // Check if the node exists and can be removed
-    const node = this.findNode(normalizedPath);
-    if (!node || !node.canRemove) {
-      return false;
-    }
-
-    return this.removeValueInternal(normalizedPath);
+    return this.removeValueInternal(path);
   }
 
   /**
    * Clean up empty parent containers after element removal.
    * Recursively removes empty arrays/objects based on removeEmptyContainers option.
    * @param path - The path to check for empty container
-   * @returns The topmost parent path for reconciliation
+   * @returns The topmost parent path changed
    */
   private cleanupEmptyContainers(path: string): string {
-    // Check if we should cleanup empty containers
     const strategy = this.options.removeEmptyContainers;
-    if (strategy === "never" || path === ROOT_PATH) {
-      return path;
+    if (strategy === "never") {
+      return "";
     }
-
-    const node = this.findNode(path);
+    const node = this.getNode(path);
     if (!node) {
       return path;
     }
-
     const value = this.getValue(path);
-
-    // Check if container is empty
     const isEmpty =
-      (Array.isArray(value) && value.length === 0) ||
-      (value &&
-        typeof value === "object" &&
+      value === null ||
+      (typeof value === "object" &&
         !Array.isArray(value) &&
         Object.keys(value).length === 0);
 
     if (!isEmpty) {
       return path;
     }
-
-    // Determine if we should remove based on strategy
-    const shouldRemove =
-      strategy === "always" || (strategy === "auto" && !node.isRequired);
-
+    const shouldRemove = strategy === "auto" && !node.required;
     if (!shouldRemove) {
       return path;
     }
-
-    // Remove the empty container
     const success = removeJsonPointer(this.value, path);
     if (!success) {
       return path;
     }
-
-    // Find parent path and recursively check
-    const lastSlash = path.lastIndexOf("/");
-    const parentPath =
-      lastSlash <= 0 ? ROOT_PATH : path.substring(0, lastSlash);
-
-    return this.cleanupEmptyContainers(parentPath);
+    return this.cleanupEmptyContainers(getJsonPointerParent(path));
   }
 
   /**
    * Get default value for a schema, respecting autoFillDefaults option.
    * Falls back to 'always' strategy if configured strategy returns undefined.
+   * If still undefined (e.g., schema has no type), falls back to null as a valid JSON value.
    */
-  private getDefaultValueForAdd(schema: Schema): unknown {
-    const strategy = this.options.autoFillDefaults;
-    let defaultValue: unknown;
-    if (strategy && strategy !== "never") {
-      defaultValue = getDefaultValue(schema, { strategy });
+  private newDefaultValue(schema: Schema, required: boolean): unknown {
+    const strategy = this.options.fillDefaults;
+    if (strategy === "never") {
+      return undefined;
     }
-    if (defaultValue === undefined) {
-      defaultValue = getDefaultValue(schema, { strategy: "always" });
+    return getDefaultValue(schema, required);
+  }
+
+  private addObjectProperty(
+    parent: FieldNode,
+    parentValue: unknown,
+    propertyName: string,
+    propertyValue?: unknown,
+  ): boolean {
+    if (!propertyName) {
+      return false;
     }
-    return defaultValue;
+    // Initialize empty array container if undefined or null
+    if (parentValue === undefined || parentValue === null) {
+      parentValue = {};
+      this.setJsonPointer(parent.instanceLocation, parentValue);
+    }
+    // Value exists but is not an object, cannot add
+    if (typeof parentValue !== "object") {
+      return false;
+    }
+    const { schema, keywordLocationToken, required } = getSubSchema(
+      parent.schema,
+      propertyName,
+    );
+    // cannot add if no schema match found, it not an expected property
+    if (!keywordLocationToken) {
+      return false;
+    }
+    const defaultValue =
+      propertyValue !== undefined
+        ? propertyValue
+        : this.newDefaultValue(schema, required);
+    const propertyPath = jsonPointerJoin(parent.instanceLocation, propertyName);
+
+    const success = setJsonPointer(this.value, propertyPath, defaultValue);
+    if (!success) return false;
+
+    // Reconcile from parent to rebuild children
+    this.reconcile(parent.instanceLocation);
+    this.notify({ type: "value", path: parent.instanceLocation });
+    return true;
+  }
+
+  private addArrayItem(
+    parent: FieldNode,
+    parentValue: unknown,
+    initialValue?: unknown,
+  ): boolean {
+    // Initialize empty array container if undefined or null
+    if (parentValue === undefined || parentValue === null) {
+      parentValue = [];
+      this.setJsonPointer(parent.instanceLocation, parentValue);
+    }
+    // Value exists but is not an array, cannot add
+    if (!Array.isArray(parentValue)) {
+      return false;
+    }
+    // Add new item to array
+    const newItemIndex = String(parentValue.length);
+    const {
+      schema: subschema,
+      keywordLocationToken,
+      required,
+    } = getSubSchema(parent.schema, newItemIndex);
+    // cannot add if no schema found, it not an expected property
+    if (!keywordLocationToken) {
+      return false;
+    }
+    const defaultValue =
+      initialValue !== undefined
+        ? initialValue
+        : this.newDefaultValue(subschema, required);
+
+    const itemPath = jsonPointerJoin(parent.instanceLocation, newItemIndex);
+    const success = setJsonPointer(this.value, itemPath, defaultValue);
+    if (!success) return false;
+
+    // Reconcile from parent to rebuild children
+    this.reconcile(parent.instanceLocation);
+    this.notify({ type: "value", path: parent.instanceLocation });
+    return true;
   }
 
   /**
@@ -477,96 +523,23 @@ export class SchemaRuntime {
    * @param initialValue - Optional initial value to set. If not provided, uses default from schema.
    * @returns true if successful, false if cannot add
    */
-  addValue(parentPath: string, key?: string, initialValue?: unknown): boolean {
-    const normalizedPath = normalizeRootPath(parentPath);
-    const parentNode = this.findNode(normalizedPath);
-
+  addChild(parentPath: string, key?: string, initialValue?: unknown): boolean {
+    const parentNode = this.getNode(parentPath);
     if (!parentNode || !parentNode.canAdd) {
       return false;
     }
-
-    let parentValue = this.getValue(normalizedPath);
-    const parentSchema = parentNode.schema;
+    const parentValue = this.getValue(parentPath);
 
     // Auto-initialize container only if value is undefined or null
     // If value exists but type mismatches, return false (don't overwrite)
     if (parentNode.type === "array") {
-      if (Array.isArray(parentValue)) {
-        // Value is already an array, proceed
-      } else if (parentValue === undefined || parentValue === null) {
-        // Initialize empty array
-        parentValue = [];
-        this.setValueAtPath(normalizedPath, parentValue);
-      } else {
-        // Value exists but is not an array, cannot add
-        return false;
-      }
+      return this.addArrayItem(parentNode, parentValue, initialValue);
     } else if (parentNode.type === "object") {
-      if (parentValue && typeof parentValue === "object") {
-        // Value is already an object, proceed
-      } else if (parentValue === undefined || parentValue === null) {
-        // Initialize empty object
-        parentValue = {};
-        this.setValueAtPath(normalizedPath, parentValue);
-      } else {
-        // Value exists but is not an object, cannot add
-        return false;
-      }
-    }
-
-    if (parentNode.type === "array" && Array.isArray(parentValue)) {
-      // Add new item to array
-      const newIndex = parentValue.length;
-      const { schema: subschema, keywordLocationToken } = getSubSchema(
-        parentSchema,
-        String(newIndex),
-      );
-      // cannot add if no schema found
-      if (!keywordLocationToken) {
-        return false;
-      }
-      const defaultValue =
-        initialValue !== undefined
-          ? initialValue
-          : this.getDefaultValueForAdd(subschema);
-      const itemPath = jsonPointerJoin(normalizedPath, String(newIndex));
-      const success = setJsonPointer(this.value, itemPath, defaultValue);
-      if (!success) return false;
-
-      // Reconcile from parent to rebuild children
-      this.reconcile(normalizedPath);
-      this.notify({ type: "value", path: normalizedPath });
-      return true;
-    } else if (
-      parentNode.type === "object" &&
-      typeof parentValue === "object"
-    ) {
-      // Add new property to object
       if (!key) {
         return false;
       }
-      const { schema: subschema, keywordLocationToken } = getSubSchema(
-        parentSchema,
-        key,
-      );
-      // cannot add if no schema found
-      if (!keywordLocationToken) {
-        return false;
-      }
-      const defaultValue =
-        initialValue !== undefined
-          ? initialValue
-          : this.getDefaultValueForAdd(subschema);
-      const propertyPath = jsonPointerJoin(normalizedPath, key);
-      const success = setJsonPointer(this.value, propertyPath, defaultValue);
-      if (!success) return false;
-
-      // Reconcile from parent to rebuild children
-      this.reconcile(normalizedPath);
-      this.notify({ type: "value", path: normalizedPath });
-      return true;
+      return this.addObjectProperty(parentNode, parentValue, key, initialValue);
     }
-
     return false;
   }
 
@@ -588,98 +561,78 @@ export class SchemaRuntime {
    * runtime.setValue("/optional", undefined); // remove optional field
    */
   setValue(path: string, value: unknown): boolean {
-    const normalizedPath = normalizeRootPath(path);
-
     // Handle undefined value: try to remove the field if it's optional
-    if (value === undefined && normalizedPath !== ROOT_PATH) {
-      const node = this.findNode(normalizedPath);
-
-      // If node exists and is not required, remove it
-      if (node && !node.isRequired) {
-        return this.removeValueInternal(normalizedPath);
-      }
-
-      // If node is required, fall through to set undefined as the value
+    if (value === undefined) {
+      return this.removeValueInternal(path);
     }
-
     // Update value
-    const success = this.setValueAtPath(normalizedPath, value);
+    const success = this.setJsonPointer(path, value);
     if (!success) return false;
-
     // Reconcile and notify
-    this.reconcile(normalizedPath);
-    this.notify({ type: "value", path: normalizedPath });
+    this.reconcile(path);
+    this.notify({ type: "value", path });
     return true;
   }
 
   /**
-   * Find the FieldNode at a specific path.
+   * Get the FieldNode at a specific path.
    * Returns the node tree representation that includes schema, type, error, and children.
    *
    * @param path - The JSON Pointer path (e.g., "/user/name", "" for root)
    * @returns The FieldNode at the path, or undefined if not found
    *
    * @example
-   * const node = runtime.findNode("/name");
+   * const node = runtime.getNode("/name");
    * console.log(node?.schema, node?.type, node?.error);
    */
-  findNode(path: string): FieldNode | undefined {
-    const normalizedPath = normalizeRootPath(path);
-    // Handle root node queries
-    if (normalizedPath === ROOT_PATH) return this.root;
+  getNode(path: string): FieldNode | undefined {
+    // fast path for root
+    if (path === "") return this.root;
 
-    const segments = parseJsonPointer(normalizedPath);
-
+    const segments = parseJsonPointer(path);
     let current: FieldNode | undefined = this.root;
     for (const segment of segments) {
       if (!current?.children) return undefined;
-
-      // Build the expected exact path for this child
       const expectedPath = jsonPointerJoin(current.instanceLocation, segment);
       const found: FieldNode | undefined = current.children?.find(
         (child) => child.instanceLocation === expectedPath,
       );
-
       if (!found) return undefined;
       current = found;
     }
-
     return current;
   }
 
   private findNearestExistingNode(path: string): FieldNode | undefined {
-    const normalizedPath = normalizeRootPath(path);
-    let currentPath = normalizedPath;
-
-    while (currentPath !== ROOT_PATH) {
-      const node = this.findNode(currentPath);
+    let currentPath = path;
+    while (currentPath) {
+      const node = this.getNode(currentPath);
       if (node) return node;
-
-      const lastSlash = currentPath.lastIndexOf("/");
-      currentPath =
-        lastSlash <= 0 ? ROOT_PATH : currentPath.substring(0, lastSlash);
+      currentPath = getJsonPointerParent(currentPath);
     }
-
     return this.root;
   }
 
+  validate(path: string): void {
+    const node = this.getNode(path);
+    if (node) {
+      this.buildNode(node, undefined, { setActivated: true });
+    }
+    this.reconcile(path);
+    this.notify({ type: "value", path });
+  }
   /**
    * Update node dependencies when schema changes.
    * Unregisters old dependencies and registers new ones.
    */
   private updateNodeDependencies(node: FieldNode, schema: Schema): void {
     const { instanceLocation } = node;
-
-    node.originalSchema = schema;
     const dependencies = collectDependencies(schema, instanceLocation);
-
     // Unregister old dependencies
     for (const depPath of node.dependencies || []) {
       this.unregisterDependent(depPath, node);
     }
-
     node.dependencies = dependencies;
-
     // Register new dependencies
     for (const depPath of dependencies) {
       this.registerDependent(depPath, node);
@@ -692,113 +645,47 @@ export class SchemaRuntime {
    * may appear when conditions change.
    *
    * Container initialization rules:
-   * - Root node is always considered required and will be initialized if it has defaults or required properties
+   * - Required containers will be initialized if it has defaults or required properties
    * - Nested containers are initialized only if they are in parent's required array
    *
    * @param instanceLocation - The path to the node
    * @param newSchema - The new effective schema
    * @param type - The schema type
-   * @param isRequired - Whether this node is required by its parent
+   * @param required - Whether this node is required by its parent
    */
   private applySchemaDefaults(
     instanceLocation: string,
     newSchema: Schema,
     type: SchemaType,
-    isRequired: boolean = true,
+    required: boolean = true,
   ): void {
-    // Skip if 'never' mode is enabled
-    const strategy = this.options.autoFillDefaults;
+    const strategy = this.options.fillDefaults;
+    // when this field is not required by parent, do not apply defaults
     if (strategy === "never") {
       return;
     }
-
-    let value = this.getValue(instanceLocation);
-    const isRoot = instanceLocation === ROOT_PATH;
-
-    if (type === "object" && newSchema.properties) {
-      const requiredSet = new Set(newSchema.required || []);
-
-      // Check if any property needs initialization:
-      // 1. Has an explicit default value
-      // 2. Is required AND is an object/array type (needs container initialization)
-      const hasAnyDefaults = Object.entries(newSchema.properties).some(
-        ([key, subschema]) => {
-          const defaultValue = getDefaultValue(subschema, { strategy });
-          if (defaultValue !== undefined) return true;
-
-          // Required object/array containers need initialization
-          const isChildRequired = requiredSet.has(key);
-          if (
-            isChildRequired &&
-            (subschema.type === "object" || subschema.type === "array")
-          ) {
-            return true;
-          }
-          return false;
-        },
-      );
-
-      // Determine if we should initialize this container:
-      // - Root node: always initialize if there are defaults or required containers to fill
-      // - Non-root node: only initialize if this node is required AND has content to fill
-      const shouldInitialize =
-        (value === undefined || value === null) &&
-        hasAnyDefaults &&
-        (isRoot || isRequired);
-
-      if (shouldInitialize) {
-        value = {};
-        this.setValueAtPath(normalizeRootPath(instanceLocation), value);
-      }
-
-      const obj =
-        value && typeof value === "object"
-          ? (value as Record<string, unknown>)
-          : null;
-      if (!obj) return;
-
-      for (const [key, subschema] of Object.entries(newSchema.properties)) {
-        const hasValue = obj[key] !== undefined;
-        const isChildRequired = requiredSet.has(key);
-
-        if (!hasValue) {
-          const defaultValue = getDefaultValue(subschema, { strategy });
-          if (defaultValue !== undefined) {
-            // Fill default value
-            const propertyPath = jsonPointerJoin(instanceLocation, key);
-            setJsonPointer(this.value, propertyPath, defaultValue);
-          } else if (isChildRequired && subschema.type === "object") {
-            // Initialize required object containers even without defaults
-            // This allows nested required objects to be properly initialized
-            const propertyPath = jsonPointerJoin(instanceLocation, key);
-            setJsonPointer(this.value, propertyPath, {});
-          } else if (isChildRequired && subschema.type === "array") {
-            // Initialize required array containers even without defaults
-            const propertyPath = jsonPointerJoin(instanceLocation, key);
-            setJsonPointer(this.value, propertyPath, []);
-          }
-        }
-      }
-
-      return;
+    const value = this.getValue(instanceLocation);
+    const [newValue, changed] = applyDefaults(type, value, newSchema, required);
+    if (changed) {
+      this.setJsonPointer(instanceLocation, newValue);
     }
+  }
 
-    if (type === "array" && newSchema.prefixItems) {
-      const arr = Array.isArray(value) ? value : null;
-      if (!arr) return;
-
-      // Fill defaults for prefixItems positions that don't have values
-      for (let i = 0; i < newSchema.prefixItems.length; i++) {
-        if (arr[i] === undefined) {
-          const itemSchema = newSchema.prefixItems[i];
-          const defaultValue = getDefaultValue(itemSchema, { strategy });
-          if (defaultValue !== undefined) {
-            const itemPath = jsonPointerJoin(instanceLocation, String(i));
-            setJsonPointer(this.value, itemPath, defaultValue);
-          }
-        }
-      }
-    }
+  /**
+   * Sort property entries by x-order.
+   * Properties with lower x-order values come first.
+   * Properties without x-order are placed at the end.
+   */
+  private sortPropertiesByOrder(
+    entries: [string, Schema][],
+  ): [string, Schema][] {
+    return entries.sort(([, schemaA], [, schemaB]) => {
+      const orderA =
+        typeof schemaA["x-order"] === "number" ? schemaA["x-order"] : Infinity;
+      const orderB =
+        typeof schemaB["x-order"] === "number" ? schemaB["x-order"] : Infinity;
+      return orderA - orderB;
+    });
   }
 
   /**
@@ -808,23 +695,21 @@ export class SchemaRuntime {
   private buildNodeChildren(
     node: FieldNode,
     value: unknown,
-    options: {
-      updatedNodes?: Set<string>;
-    },
+    options: BuildNodeConfig,
   ): void {
     const { keywordLocation, instanceLocation } = node;
     const effectiveSchema = node.schema;
     const type = node.type;
 
-    // Build children map for reuse
-    const oldChildrenMap = new Map<string, FieldNode>();
-    if (node.children) {
-      for (const child of node.children) {
-        oldChildrenMap.set(child.instanceLocation, child);
-      }
-    }
+    // record this child key as processed
+    const processedKeys = new Set<string>();
 
+    // Build new children array to maintain correct order
     const newChildren: FieldNode[] = [];
+    const oldChildrenMap = new Map<string, FieldNode>();
+    for (const child of node.children || []) {
+      oldChildrenMap.set(child.instanceLocation, child);
+    }
 
     const processChild = (
       childKey: string,
@@ -834,22 +719,23 @@ export class SchemaRuntime {
       isRequired: boolean = false,
     ) => {
       const childinstanceLocation = jsonPointerJoin(instanceLocation, childKey);
+      if (processedKeys.has(childinstanceLocation)) {
+        return;
+      }
+      processedKeys.add(childinstanceLocation);
 
-      // Reuse or create child node
+      // Reuse existing child node or create new one
       let childNode = oldChildrenMap.get(childinstanceLocation);
-      if (childNode) {
-        oldChildrenMap.delete(childinstanceLocation);
-        childNode.keywordLocation = childkeywordLocation;
-      } else {
+      if (!childNode) {
         childNode = this.createEmptyNode(
           childinstanceLocation,
           childkeywordLocation,
         );
       }
-
+      childNode.keywordLocation = childkeywordLocation;
       childNode.canRemove = canRemove;
-      childNode.isRequired = isRequired;
-      this.buildNode(childNode, childSchema, { ...options, isRequired });
+      childNode.required = isRequired;
+      this.buildNode(childNode, childSchema, { ...options });
       newChildren.push(childNode);
     };
 
@@ -857,17 +743,20 @@ export class SchemaRuntime {
       case "object": {
         const valueKeys =
           value && typeof value === "object" ? Object.keys(value) : [];
-        const processedKeys = new Set<string>();
 
         // Set canAdd based on additionalProperties
-        node.canAdd = !!effectiveSchema.additionalProperties;
+        node.canAdd =
+          !!effectiveSchema.additionalProperties ||
+          !!effectiveSchema.patternProperties;
 
         // Process properties (cannot be removed)
         if (effectiveSchema.properties) {
-          for (const [key, subschema] of Object.entries(
-            effectiveSchema.properties,
-          )) {
-            processedKeys.add(key);
+          // Sort by x-order if present (lower values first, undefined comes last)
+          const propertyEntries = this.sortPropertiesByOrder(
+            Object.entries(effectiveSchema.properties),
+          );
+
+          for (const [key, subschema] of propertyEntries) {
             const isChildRequired =
               effectiveSchema.required?.includes(key) ?? false;
             processChild(
@@ -886,8 +775,7 @@ export class SchemaRuntime {
             effectiveSchema.patternProperties,
           )) {
             for (const key of valueKeys) {
-              if (safeRegexTest(pattern, key) && !processedKeys.has(key)) {
-                processedKeys.add(key);
+              if (safeRegexTest(pattern, key)) {
                 processChild(
                   key,
                   subschema,
@@ -908,15 +796,13 @@ export class SchemaRuntime {
               : {};
 
           for (const key of valueKeys) {
-            if (!processedKeys.has(key)) {
-              processChild(
-                key,
-                subschema,
-                `${keywordLocation}/additionalProperties`,
-                true,
-                false, // additionalProperties are never required
-              );
-            }
+            processChild(
+              key,
+              subschema,
+              `${keywordLocation}/additionalProperties`,
+              true,
+              false, // additionalProperties are never required
+            );
           }
         }
         break;
@@ -941,7 +827,7 @@ export class SchemaRuntime {
                 effectiveSchema.prefixItems[i],
                 `${keywordLocation}/prefixItems/${i}`,
                 false,
-                true, // array items are always considered required
+                true, // array prefix items are always considered required
               );
             }
           }
@@ -963,9 +849,11 @@ export class SchemaRuntime {
       }
     }
 
-    // Cleanup removed children
-    for (const oldChild of oldChildrenMap.values()) {
-      this.unregisterNodeDependencies(oldChild);
+    // Cleanup removed children and unregister their dependencies
+    for (const [location, child] of oldChildrenMap) {
+      if (!processedKeys.has(location)) {
+        this.unregisterNodeDependencies(child);
+      }
     }
 
     node.children = newChildren;
@@ -980,25 +868,26 @@ export class SchemaRuntime {
   private buildNode(
     node: FieldNode,
     schema?: Schema,
-    options: {
-      updatedNodes?: Set<string>;
-      isRequired?: boolean;
-    } = {},
+    options: BuildNodeConfig = {},
   ): void {
     const { keywordLocation, instanceLocation } = node;
     const value = this.getValue(instanceLocation);
+
+    // when setActivated is true, mark node as activated
+    // also activate if value is defined
+    if (options.setActivated) {
+      node.activated = true;
+    }
 
     // Circular update protection
     if (this.updatingNodes.has(instanceLocation)) {
       return;
     }
-
     // Track updated nodes to prevent duplicate updates
     const updatedNodes = options.updatedNodes || new Set<string>();
     if (updatedNodes.has(instanceLocation)) {
       return;
     }
-
     this.updatingNodes.add(instanceLocation);
 
     try {
@@ -1006,29 +895,24 @@ export class SchemaRuntime {
       const schemaChanged =
         schema !== undefined && !deepEqual(schema, node.originalSchema);
       if (schemaChanged) {
+        node.originalSchema = schema;
         this.updateNodeDependencies(node, schema);
       }
 
       // Resolve effective schema based on current value
-      // Determine if this node is required by checking options or default to true for root
-      const isRequired = options.isRequired ?? true;
       const { type, effectiveSchema, error } = resolveEffectiveSchema(
         this.validator,
         node.originalSchema,
         value,
         keywordLocation,
         instanceLocation,
-        isRequired,
+        node.activated,
       );
 
       // Detect changes for notifications
-      // version === -1 indicates initial construction (node was just created)
-      const isInitialBuild = node.version === -1;
       const effectiveSchemaChanged =
-        isInitialBuild ||
-        !deepEqual(effectiveSchema, node.schema) ||
-        type !== node.type;
-      const errorChanged = isInitialBuild || !deepEqual(error, node.error);
+        !deepEqual(effectiveSchema, node.schema) || type !== node.type;
+      const errorChanged = !deepEqual(error, node.error);
 
       // Apply defaults when effective schema changes (e.g., if-then-else branch switch, or initial construction)
       // applySchemaDefaults will respect the autoFillDefaults option internally
@@ -1038,7 +922,7 @@ export class SchemaRuntime {
           instanceLocation,
           effectiveSchema,
           type,
-          isRequired,
+          node.required,
         );
       }
 
@@ -1051,16 +935,10 @@ export class SchemaRuntime {
       // Build children - pass updatedNodes to ensure proper tracking
       // Re-fetch value in case defaults were applied
       const currentValue = this.getValue(instanceLocation);
-      this.buildNodeChildren(node, currentValue, { ...options, updatedNodes });
-
-      // Send notifications for this node only
-      // Child nodes handle their own notifications in buildNodeChildren -> buildNode
-      if (effectiveSchemaChanged) {
-        this.notify({ type: "schema", path: instanceLocation });
-      }
-      if (errorChanged) {
-        this.notify({ type: "error", path: instanceLocation });
-      }
+      this.buildNodeChildren(node, currentValue, {
+        setActivated: options.setActivated || undefined, // propagate activation
+        updatedNodes,
+      });
 
       // Mark this node as updated
       updatedNodes.add(instanceLocation);
@@ -1070,10 +948,20 @@ export class SchemaRuntime {
       if (dependentNodes) {
         for (const dependentNode of dependentNodes) {
           this.buildNode(dependentNode, undefined, {
-            ...options,
+            setActivated: undefined, // do not change dependent node activation state
             updatedNodes,
           });
         }
+      }
+
+      // Send notifications for this node
+      // Child nodes handle their own notifications in buildNodeChildren -> buildNode
+      // Notify after all updates are done to prevent duplicate notifications
+      if (effectiveSchemaChanged) {
+        this.notify({ type: "schema", path: instanceLocation });
+      }
+      if (errorChanged) {
+        this.notify({ type: "error", path: instanceLocation });
       }
     } finally {
       this.updatingNodes.delete(instanceLocation);

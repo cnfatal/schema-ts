@@ -9,7 +9,7 @@ export function useValue<T = unknown>(runtime: SchemaRuntime, path: string): T {
   useSyncExternalStore(
     (onStoreChange) => runtime.subscribe(path, onStoreChange),
     () => {
-      const node = runtime.findNode(path);
+      const node = runtime.getNode(path);
       return node ? node.version : -1;
     },
   );

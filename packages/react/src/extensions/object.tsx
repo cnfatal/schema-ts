@@ -1,6 +1,7 @@
 import React from "react";
 import { Schema } from "@schema-ts/core";
 import { defineExtension, WidgetProps } from "../SimpleFieldRenderer";
+import { FormFieldRenderProps } from "../FormField";
 
 export interface ObjectPropertyProps {
   key: string;
@@ -28,7 +29,7 @@ export const objectExtension = (
   component: React.ComponentType<ObjectWidgetProps>,
 ) =>
   defineExtension<ObjectWidgetProps>("object", component, {
-    matcher: (props, base) => {
+    matcher: (props: FormFieldRenderProps, base: WidgetProps) => {
       if (props.type === "object") {
         const { runtime, instanceLocation } = props;
 
@@ -36,27 +37,33 @@ export const objectExtension = (
           props.children?.map((child) => {
             const childKey = child.instanceLocation.split("/").pop() || "";
 
+            const onRemove = child.canRemove
+              ? () => {
+                  runtime.removeValue(child.instanceLocation);
+                }
+              : undefined;
+
+            const renderChild = (options?: Record<string, unknown>) =>
+              base.renderChild(child.instanceLocation, options);
+
             return {
               key: childKey,
               schema: child.schema,
-              render: (options?: Record<string, unknown>) =>
-                base.renderChild(child.instanceLocation, options),
-              onRemove: child.canRemove
-                ? () => {
-                    runtime.removeValue(child.instanceLocation);
-                  }
-                : undefined,
+              render: renderChild,
+              onRemove,
             };
           }) || [];
+
+        const onAddProperty = props.canAdd
+          ? (key: string, value?: unknown) => {
+              runtime.addChild(instanceLocation, key, value);
+            }
+          : undefined;
 
         return {
           ...base,
           properties,
-          onAddProperty: props.canAdd
-            ? (key: string, value?: unknown) => {
-                runtime.addValue(instanceLocation, key, value);
-              }
-            : undefined,
+          onAddProperty,
         };
       }
       return undefined;

@@ -129,7 +129,7 @@ export function extractReferencedPaths(
   // Schema is expected to be pre-dereferenced
   const schema = conditionSchema;
 
-  // 1. properties - checking child properties
+  // properties - checking child properties
   if (schema.properties) {
     for (const key of Object.keys(schema.properties)) {
       const childPath = basePath ? `${basePath}/${key}` : `/${key}`;
@@ -141,14 +141,14 @@ export function extractReferencedPaths(
     }
   }
 
-  // 2. items - checking array elements
+  // items - checking array elements
   if (schema.items && typeof schema.items === "object") {
     // items condition means dependency on the array itself
     paths.push(basePath || "/");
     paths.push(...extractReferencedPaths(schema.items, basePath, depth + 1));
   }
 
-  // 3. prefixItems - checking specific indexed elements
+  // prefixItems - checking specific indexed elements
   if (schema.prefixItems) {
     schema.prefixItems.forEach((itemSchema: Schema, index: number) => {
       const indexPath = basePath ? `${basePath}/${index}` : `/${index}`;
@@ -157,19 +157,19 @@ export function extractReferencedPaths(
     });
   }
 
-  // 4. const/enum - value constraints at current path
+  // const/enum - value constraints at current path
   if (schema.const !== undefined || schema.enum) {
     if (basePath) {
       paths.push(basePath);
     }
   }
 
-  // 5. type constraint
+  // type constraint
   if (schema.type && basePath) {
     paths.push(basePath);
   }
 
-  // 6. Value constraints (minimum, maximum, minLength, maxLength, pattern, format)
+  // Value constraints (minimum, maximum, minLength, maxLength, pattern, format)
   const valueConstraints = [
     "minimum",
     "maximum",
@@ -195,14 +195,14 @@ export function extractReferencedPaths(
     }
   }
 
-  // 7. required
+  // required
   if (schema.required) {
     for (const req of schema.required) {
       paths.push(basePath ? `${basePath}/${req}` : `/${req}`);
     }
   }
 
-  // 8. dependentRequired
+  // dependentRequired
   if (schema.dependentRequired) {
     for (const [prop, reqs] of Object.entries(schema.dependentRequired)) {
       paths.push(basePath ? `${basePath}/${prop}` : `/${prop}`);
@@ -212,7 +212,7 @@ export function extractReferencedPaths(
     }
   }
 
-  // 9. dependentSchemas
+  // dependentSchemas
   if (schema.dependentSchemas) {
     for (const [prop, subSchema] of Object.entries(schema.dependentSchemas)) {
       paths.push(basePath ? `${basePath}/${prop}` : `/${prop}`);
@@ -220,7 +220,7 @@ export function extractReferencedPaths(
     }
   }
 
-  // 10. Nested conditions - recursive handling
+  // Nested conditions - recursive handling
   if (schema.if) {
     paths.push(...extractReferencedPaths(schema.if, basePath, depth + 1));
   }
@@ -231,7 +231,7 @@ export function extractReferencedPaths(
     paths.push(...extractReferencedPaths(schema.else, basePath, depth + 1));
   }
 
-  // 8. allOf/anyOf/oneOf
+  // allOf/anyOf/oneOf
   for (const keyword of ["allOf", "anyOf", "oneOf"] as const) {
     const subSchemas = schema[keyword];
     if (subSchemas) {
@@ -241,18 +241,12 @@ export function extractReferencedPaths(
     }
   }
 
-  // 9. dependentSchemas - when a property exists, apply additional schema
-  if (schema.dependentSchemas) {
-    for (const [key, subSchema] of Object.entries(schema.dependentSchemas)) {
-      const keyPath = basePath ? `${basePath}/${key}` : `/${key}`;
-      // The presence of the key triggers the dependent schema
-      paths.push(keyPath);
-      // The dependent schema may reference other paths
-      paths.push(...extractReferencedPaths(subSchema, basePath, depth + 1));
-    }
+  // not - negation condition
+  if (schema.not) {
+    paths.push(...extractReferencedPaths(schema.not, basePath, depth + 1));
   }
 
-  // 10. contains - dependency on array elements
+  // contains - dependency on array elements
   if (schema.contains) {
     paths.push(basePath || "/");
     paths.push(...extractReferencedPaths(schema.contains, basePath, depth + 1));

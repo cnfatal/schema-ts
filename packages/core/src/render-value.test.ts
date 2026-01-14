@@ -97,8 +97,8 @@ describe("Value Change Scenarios", () => {
       d: "untouched",
     });
 
-    const nodeB = runtime.findNode("/b");
-    const nodeD = runtime.findNode("/d");
+    const nodeB = runtime.getNode("/b");
+    const nodeD = runtime.getNode("/d");
 
     expect(runtime.getValue("/a")).toBe("initial");
     expect(runtime.getValue("/d")).toBe("untouched");
@@ -110,8 +110,8 @@ describe("Value Change Scenarios", () => {
     expect(runtime.getValue("/a")).toBe("updated");
 
     // Sibling nodes should be same instances (not recreated)
-    expect(runtime.findNode("/d")).toBe(nodeD);
-    expect(runtime.findNode("/b")).toBe(nodeB);
+    expect(runtime.getNode("/d")).toBe(nodeD);
+    expect(runtime.getNode("/b")).toBe(nodeB);
   });
 
   it("rebuilds subtree when conditional schema changes", () => {
@@ -130,13 +130,13 @@ describe("Value Change Scenarios", () => {
       dependent: "foo",
     });
 
-    const dependentNode = runtime.findNode("/dependent");
+    const dependentNode = runtime.getNode("/dependent");
     expect(dependentNode?.schema.type).toBe("string");
 
     // Update val to 2 -> triggers else -> dependent should be number
     runtime.setValue("/val", 2);
 
-    const newDependentNode = runtime.findNode("/dependent");
+    const newDependentNode = runtime.getNode("/dependent");
     expect(newDependentNode?.schema.type).toBe("number");
 
     // Dependent node should be rebuilt (different instance)

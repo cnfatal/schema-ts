@@ -117,14 +117,14 @@ describe("Schema Composition Dependencies", () => {
       expect(runtime.root.dependencies?.has("/count")).toBe(true);
 
       // count = 50 -> if fails, no special property
-      expect(runtime.findNode("/special")).toBeUndefined();
+      expect(runtime.getNode("/special")).toBeUndefined();
 
       // count = 100 -> if passes, special property appears
       runtime.setValue("/count", 100);
       // Need to provide value for special to create node
       (runtime.getValue("#") as Record<string, unknown>)["special"] = "test";
       runtime.setValue("/count", 100); // Trigger reconcile again
-      const specialNode = runtime.findNode("/special");
+      const specialNode = runtime.getNode("/special");
       expect(specialNode).toBeTruthy();
     });
   });
@@ -147,10 +147,10 @@ describe("Schema Composition Dependencies", () => {
 
       // Should complete without infinite loop
       runtime.setValue("/a", "trigger");
-      expect(runtime.findNode("/result")).toBeTruthy();
+      expect(runtime.getNode("/result")).toBeTruthy();
 
       runtime.setValue("/a", "other");
-      expect(runtime.findNode("/result")).toBeUndefined();
+      expect(runtime.getNode("/result")).toBeUndefined();
     });
   });
 
@@ -174,17 +174,17 @@ describe("Schema Composition Dependencies", () => {
         parent: { toggle: false },
       });
 
-      const parentNode = runtime.findNode("/parent");
+      const parentNode = runtime.getNode("/parent");
       expect(parentNode).toBeTruthy();
       // Parent node should have dependency on /parent/toggle
       expect(parentNode?.dependencies?.has("/parent/toggle")).toBe(true);
 
       // Initially no extra
-      expect(runtime.findNode("/parent/extra")).toBeUndefined();
+      expect(runtime.getNode("/parent/extra")).toBeUndefined();
 
       // Toggle on
       runtime.setValue("/parent/toggle", true);
-      expect(runtime.findNode("/parent/extra")).toBeTruthy();
+      expect(runtime.getNode("/parent/extra")).toBeTruthy();
     });
   });
 
@@ -215,17 +215,17 @@ describe("Schema Composition Dependencies", () => {
       });
 
       // In mode A, config with nested condition exists
-      expect(runtime.findNode("/config")).toBeTruthy();
-      expect(runtime.findNode("/config/detail")).toBeTruthy();
+      expect(runtime.getNode("/config")).toBeTruthy();
+      expect(runtime.getNode("/config/detail")).toBeTruthy();
 
       // Switch to mode B - config subtree should be replaced by simple
       runtime.setValue("/mode", "B");
-      expect(runtime.findNode("/config")).toBeUndefined();
-      expect(runtime.findNode("/simple")).toBeTruthy();
+      expect(runtime.getNode("/config")).toBeUndefined();
+      expect(runtime.getNode("/simple")).toBeTruthy();
 
       // Switch back to mode A
       runtime.setValue("/mode", "A");
-      expect(runtime.findNode("/config")).toBeTruthy();
+      expect(runtime.getNode("/config")).toBeTruthy();
     });
   });
 });

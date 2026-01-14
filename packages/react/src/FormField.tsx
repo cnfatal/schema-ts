@@ -15,8 +15,6 @@ import { type FormMode, useFormContext } from "./FormContext";
 export interface FormFieldRenderProps extends FieldNode {
   value: unknown;
   onChange: (val: unknown) => void;
-  /** Callback to trigger validation, typically called on blur */
-  onBlur: () => void;
   runtime: SchemaRuntime;
   mode?: FormMode;
   /**
@@ -40,7 +38,7 @@ export interface FormFieldProps {
 
 export function FormField({ runtime, path, render, ...props }: FormFieldProps) {
   // Get node reference once - node reference is stable across updates
-  const node = useMemo(() => runtime.findNode(path), [runtime, path]);
+  const node = useMemo(() => runtime.getNode(path), [runtime, path]);
 
   // Get context for registry and mode
   const context = useFormContext();
@@ -66,13 +64,6 @@ export function FormField({ runtime, path, render, ...props }: FormFieldProps) {
     [runtime, path],
   );
 
-  // onBlur callback - can be used to trigger validation on blur
-  const onBlur = useCallback(() => {
-    // Re-validate by setting current value (triggers validation)
-    const currentValue = runtime.getValue(path);
-    runtime.setValue(path, currentValue);
-  }, [runtime, path]);
-
   // Create fieldRef callback for DOM element registration
   const instanceLocation = node?.instanceLocation ?? "";
   const fieldRef: RefCallback<HTMLElement> = useCallback(
@@ -87,22 +78,18 @@ export function FormField({ runtime, path, render, ...props }: FormFieldProps) {
     [registry, instanceLocation],
   );
 
-  const renderProps = useMemo(
-    () =>
-      node
-        ? ({
-            ...node,
-            value: runtime.getValue(path),
-            runtime,
-            onChange,
-            onBlur,
-            fieldRef,
-            version,
-            ...props,
-          } as FormFieldRenderProps)
-        : null,
-    [node, version, runtime, onChange, onBlur, fieldRef, path, props],
-  );
+  const renderProps = useMemo(() => {
+    if (!node) return null;
+    return {
+      ...node,
+      value: runtime.getValue(path),
+      runtime,
+      onChange,
+      fieldRef,
+      version,
+      ...props,
+    } as FormFieldRenderProps;
+  }, [node, version, runtime, onChange, fieldRef, path, props]);
 
   if (!renderProps) return null;
 

@@ -112,6 +112,40 @@ export function removeJsonPointer(obj: unknown, jsonPointer: string): boolean {
   return false;
 }
 
+/**
+ * Sets a value at the specified JSON Pointer path within an object.
+ *
+ * This function modifies the object in place by setting a value at the location
+ * specified by the JSON Pointer. If intermediate paths don't exist, they will be
+ * automatically created as objects or arrays based on the next path segment
+ * (numeric segments create arrays, non-numeric create objects).
+ *
+ * @param obj - The object to modify. Must be a non-null object or array.
+ * @param jsonPointer - A JSON Pointer string (RFC 6901) indicating where to set the value.
+ *                      Examples: "/foo", "/foo/0", "/foo/bar/baz"
+ * @param value - The value to set at the specified location.
+ * @returns `true` if the value was successfully set, `false` otherwise.
+ *
+ * @remarks
+ * - Returns `false` if `jsonPointer` is an empty string (cannot replace root object).
+ *   To replace the entire object, handle this case in the calling code.
+ * - Returns `false` if `obj` is null or undefined.
+ * - For array paths, automatically extends the array if the index is beyond current length.
+ * - Automatically initializes missing intermediate containers as arrays or objects.
+ *
+ * @example
+ * ```typescript
+ * const obj = { foo: { bar: 1 } };
+ * setJsonPointer(obj, "/foo/bar", 2); // true, obj.foo.bar is now 2
+ * setJsonPointer(obj, "/foo/baz", 3); // true, obj.foo.baz is now 3
+ * setJsonPointer(obj, "/new/path", 4); // true, obj.new.path is now 4
+ * setJsonPointer(obj, "", 5); // false, cannot replace root object
+ *
+ * const arr = [1, 2, 3];
+ * setJsonPointer(arr, "/0", 10); // true, arr[0] is now 10
+ * setJsonPointer(arr, "/5", 20); // true, arr is now [10, 2, 3, undefined, undefined, 20]
+ * ```
+ */
 export function setJsonPointer(
   obj: unknown,
   jsonPointer: string,
@@ -178,6 +212,11 @@ export function setJsonPointer(
     }
   }
   return true;
+}
+
+export function getJsonPointerParent(path: string): string {
+  const lastSlash = path.lastIndexOf("/");
+  return lastSlash <= 0 ? "" : path.substring(0, lastSlash);
 }
 
 export function get(obj: unknown, path: string[]): unknown {

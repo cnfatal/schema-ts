@@ -14,9 +14,9 @@ describe("Node Add/Remove Functionality", () => {
       };
       const runtime = new SchemaRuntime(validator, schema, ["a", "b", "c"]);
 
-      const node0 = runtime.findNode("/0");
-      const node1 = runtime.findNode("/1");
-      const node2 = runtime.findNode("/2");
+      const node0 = runtime.getNode("/0");
+      const node1 = runtime.getNode("/1");
+      const node2 = runtime.getNode("/2");
 
       expect(node0?.canRemove).toBe(true);
       expect(node1?.canRemove).toBe(true);
@@ -37,11 +37,11 @@ describe("Node Add/Remove Functionality", () => {
       ]);
 
       // prefixItems cannot be removed
-      expect(runtime.findNode("/0")?.canRemove).toBe(false);
-      expect(runtime.findNode("/1")?.canRemove).toBe(false);
+      expect(runtime.getNode("/0")?.canRemove).toBe(false);
+      expect(runtime.getNode("/1")?.canRemove).toBe(false);
       // items can be removed
-      expect(runtime.findNode("/2")?.canRemove).toBe(true);
-      expect(runtime.findNode("/3")?.canRemove).toBe(true);
+      expect(runtime.getNode("/2")?.canRemove).toBe(true);
+      expect(runtime.getNode("/3")?.canRemove).toBe(true);
     });
 
     it("sets canRemove to true for additionalProperties", () => {
@@ -59,10 +59,10 @@ describe("Node Add/Remove Functionality", () => {
       });
 
       // Regular property cannot be removed
-      expect(runtime.findNode("/name")?.canRemove).toBe(false);
+      expect(runtime.getNode("/name")?.canRemove).toBe(false);
       // additionalProperties can be removed
-      expect(runtime.findNode("/age")?.canRemove).toBe(true);
-      expect(runtime.findNode("/score")?.canRemove).toBe(true);
+      expect(runtime.getNode("/age")?.canRemove).toBe(true);
+      expect(runtime.getNode("/score")?.canRemove).toBe(true);
     });
 
     it("sets canRemove to true for patternProperties", () => {
@@ -77,8 +77,8 @@ describe("Node Add/Remove Functionality", () => {
         S_city: "NYC",
       });
 
-      expect(runtime.findNode("/S_name")?.canRemove).toBe(true);
-      expect(runtime.findNode("/S_city")?.canRemove).toBe(true);
+      expect(runtime.getNode("/S_name")?.canRemove).toBe(true);
+      expect(runtime.getNode("/S_city")?.canRemove).toBe(true);
     });
 
     it("sets canRemove to false for regular object properties", () => {
@@ -94,8 +94,8 @@ describe("Node Add/Remove Functionality", () => {
         age: 25,
       });
 
-      expect(runtime.findNode("/name")?.canRemove).toBe(false);
-      expect(runtime.findNode("/age")?.canRemove).toBe(false);
+      expect(runtime.getNode("/name")?.canRemove).toBe(false);
+      expect(runtime.getNode("/age")?.canRemove).toBe(false);
     });
   });
 
@@ -179,7 +179,7 @@ describe("Node Add/Remove Functionality", () => {
       const result = runtime.removeValue("/age");
       expect(result).toBe(true);
       expect(runtime.getValue("")).toEqual({ name: "Alice" });
-      expect(runtime.findNode("/age")).toBeUndefined();
+      expect(runtime.getNode("/age")).toBeUndefined();
     });
 
     it("returns false when trying to remove regular properties", () => {
@@ -224,9 +224,23 @@ describe("Node Add/Remove Functionality", () => {
       };
       const runtime = new SchemaRuntime(validator, schema, ["a", "b"]);
 
-      const result = runtime.addValue("");
+      const result = runtime.addChild("");
       expect(result).toBe(true);
       expect(runtime.getValue("")).toEqual(["a", "b", ""]);
+      expect(runtime.root.children?.length).toBe(3);
+    });
+
+    it("adds new item to array with null when schema has no type", () => {
+      const schema: Schema = {
+        type: "array",
+        items: {}, // No type specified
+      };
+      const runtime = new SchemaRuntime(validator, schema, ["a", "b"]);
+
+      const result = runtime.addChild("");
+      expect(result).toBe(true);
+      // Should add null instead of undefined since undefined is not a valid JSON value
+      expect(runtime.getValue("")).toEqual(["a", "b", null]);
       expect(runtime.root.children?.length).toBe(3);
     });
 
@@ -244,7 +258,7 @@ describe("Node Add/Remove Functionality", () => {
       };
       const runtime = new SchemaRuntime(validator, schema, []);
 
-      const result = runtime.addValue("");
+      const result = runtime.addChild("");
       expect(result).toBe(true);
       expect(runtime.getValue("")).toEqual([{ name: "", age: 0 }]);
     });
@@ -259,10 +273,10 @@ describe("Node Add/Remove Functionality", () => {
       };
       const runtime = new SchemaRuntime(validator, schema, { name: "Alice" });
 
-      const result = runtime.addValue("", "age");
+      const result = runtime.addChild("", "age");
       expect(result).toBe(true);
       expect(runtime.getValue("")).toEqual({ name: "Alice", age: 0 });
-      expect(runtime.findNode("/age")).toBeTruthy();
+      expect(runtime.getNode("/age")).toBeTruthy();
     });
 
     it("returns false when adding to object without key", () => {
@@ -272,7 +286,7 @@ describe("Node Add/Remove Functionality", () => {
       };
       const runtime = new SchemaRuntime(validator, schema, {});
 
-      const result = runtime.addValue("");
+      const result = runtime.addChild("");
       expect(result).toBe(false);
     });
 
@@ -286,7 +300,7 @@ describe("Node Add/Remove Functionality", () => {
       const runtime = new SchemaRuntime(validator, schema, { name: "Alice" });
 
       expect(runtime.root.canAdd).toBe(false);
-      const result = runtime.addValue("", "extra");
+      const result = runtime.addChild("", "extra");
       expect(result).toBe(false);
     });
 
@@ -297,7 +311,7 @@ describe("Node Add/Remove Functionality", () => {
       };
       const runtime = new SchemaRuntime(validator, schema, []);
 
-      const result = runtime.addValue("/nonexistent");
+      const result = runtime.addChild("/nonexistent");
       expect(result).toBe(false);
     });
 
@@ -310,7 +324,7 @@ describe("Node Add/Remove Functionality", () => {
 
       expect(runtime.getValue("")).toBeUndefined();
 
-      const result = runtime.addValue("");
+      const result = runtime.addChild("");
       expect(result).toBe(true);
       expect(runtime.getValue("")).toEqual([""]);
       expect(runtime.root.children?.length).toBe(1);
@@ -325,10 +339,10 @@ describe("Node Add/Remove Functionality", () => {
 
       expect(runtime.getValue("")).toBeUndefined();
 
-      const result = runtime.addValue("", "count");
+      const result = runtime.addChild("", "count");
       expect(result).toBe(true);
       expect(runtime.getValue("")).toEqual({ count: 0 });
-      expect(runtime.findNode("/count")).toBeTruthy();
+      expect(runtime.getNode("/count")).toBeTruthy();
     });
 
     it("auto-initializes nested array container when value is undefined", () => {
@@ -342,13 +356,13 @@ describe("Node Add/Remove Functionality", () => {
       const runtime = new SchemaRuntime(validator, schema, {});
 
       // Add first additional property which is an array
-      const result1 = runtime.addValue("", "items");
+      const result1 = runtime.addChild("", "items");
       expect(result1).toBe(true);
       // The value should be an empty array (default for array type)
       expect(runtime.getValue("/items")).toEqual([]);
 
       // Now add to the nested array
-      const result2 = runtime.addValue("/items");
+      const result2 = runtime.addChild("/items");
       expect(result2).toBe(true);
       expect(runtime.getValue("/items")).toEqual([""]);
     });
@@ -364,13 +378,13 @@ describe("Node Add/Remove Functionality", () => {
       const runtime = new SchemaRuntime(validator, schema, {});
 
       // Add first additional property which is an object
-      const result1 = runtime.addValue("", "config");
+      const result1 = runtime.addChild("", "config");
       expect(result1).toBe(true);
       // The value should be an empty object (default for object type)
       expect(runtime.getValue("/config")).toEqual({});
 
       // Now add to the nested object
-      const result2 = runtime.addValue("/config", "key1");
+      const result2 = runtime.addChild("/config", "key1");
       expect(result2).toBe(true);
       expect(runtime.getValue("/config")).toEqual({ key1: "" });
     });
@@ -383,7 +397,7 @@ describe("Node Add/Remove Functionality", () => {
       // Value is a string but schema expects array
       const runtime = new SchemaRuntime(validator, schema, "not an array");
 
-      const result = runtime.addValue("");
+      const result = runtime.addChild("");
       expect(result).toBe(false);
       // Original value should be preserved
       expect(runtime.getValue("")).toBe("not an array");
@@ -397,7 +411,7 @@ describe("Node Add/Remove Functionality", () => {
       // Value is a number but schema expects object
       const runtime = new SchemaRuntime(validator, schema, 42);
 
-      const result = runtime.addValue("", "key");
+      const result = runtime.addChild("", "key");
       expect(result).toBe(false);
       // Original value should be preserved
       expect(runtime.getValue("")).toBe(42);
@@ -410,7 +424,7 @@ describe("Node Add/Remove Functionality", () => {
       };
       const runtime = new SchemaRuntime(validator, schema, null);
 
-      const result = runtime.addValue("");
+      const result = runtime.addChild("");
       expect(result).toBe(true);
       expect(runtime.getValue("")).toEqual([""]);
     });

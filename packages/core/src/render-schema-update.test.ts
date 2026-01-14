@@ -18,7 +18,7 @@ describe("Schema Update Scenarios", () => {
       field: "value",
     });
 
-    expect(runtime.findNode("/field")?.schema.type).toBe("string");
+    expect(runtime.getNode("/field")?.schema.type).toBe("string");
 
     // Update schema to change field type
     const newSchema: Schema = {
@@ -30,7 +30,7 @@ describe("Schema Update Scenarios", () => {
 
     runtime.setSchema(newSchema);
 
-    const node = runtime.findNode("/field");
+    const node = runtime.getNode("/field");
     expect(node?.schema.type).toBe("number");
 
     // Value remains "value" (string) but schema expects number, so error should be present
@@ -66,7 +66,7 @@ describe("Schema Update Scenarios", () => {
       a: "foo",
       b: "bar",
     });
-    expect(runtime.findNode("/b")).toBeTruthy();
+    expect(runtime.getNode("/b")).toBeTruthy();
     expect(runtime.root.dependencies?.has("/a")).toBe(true);
 
     // Update schema to remove dependency
@@ -77,7 +77,7 @@ describe("Schema Update Scenarios", () => {
 
     runtime.setSchema(schema2);
 
-    expect(runtime.findNode("/b")).toBeTruthy();
+    expect(runtime.getNode("/b")).toBeTruthy();
     // In schema2, no condition, so no dependency on /a
     expect(runtime.root.dependencies?.size).toBe(0);
   });

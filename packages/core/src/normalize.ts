@@ -7,7 +7,28 @@
 import type { Schema } from "./type";
 import { detectSchemaDraft, type SchemaDraft } from "./version";
 
-export interface NormalizerOptions {
+/**
+ * Schema normalizer interface for transforming various JSON Schema formats into a unified version.
+ */
+export interface Normalizer {
+  /**
+   * Normalizes the given schema.
+   * @param schema The raw schema input
+   * @returns A schema object following the latest draft specification
+   */
+  normalize(schema: unknown): Schema;
+}
+
+/**
+ * Base draft normalizer responsible for converting older JSON Schema keywords to newer versions (e.g., Draft-04 to Draft-2020-12).
+ */
+export class DraftNormalizer implements Normalizer {
+  normalize(schema: unknown): Schema {
+    return normalizeSchema(schema);
+  }
+}
+
+export interface DraftNormalizerOptions {
   /**
    * Source draft version. If not specified, will be auto-detected.
    */
@@ -30,7 +51,7 @@ export interface NormalizerOptions {
  */
 export function normalizeSchema(
   schema: unknown,
-  options: NormalizerOptions = {},
+  options: DraftNormalizerOptions = {},
 ): Schema {
   // Handle boolean schemas (valid in Draft-06+)
   if (typeof schema === "boolean") {
@@ -65,13 +86,13 @@ export function normalizeSchema(
       break;
   }
 
-  // 2. Process general/OpenAPI extensions (nullable, example)
+  // Process general/OpenAPI extensions (nullable, example)
   normalizeGeneral(normalized);
 
-  // 3. Recursively normalize nested schemas
+  // Recursively normalize nested schemas
   normalizeNestedSchemas(normalized, options);
 
-  // 4. Update $schema to indicate normalized version
+  // Update $schema to indicate normalized version
   if (normalized.$schema) {
     normalized.$schema = "https://json-schema.org/draft/2020-12/schema";
   }
@@ -80,7 +101,7 @@ export function normalizeSchema(
 }
 
 /**
- * Normalize draft-04 specific keywords to newer format.
+ * Normalize draft-04 specific keywords (like id, exclusiveMaximum, etc.) to newer format.
  */
 function normalizeDraft04(schema: Schema): void {
   // Access schema as Record for legacy keywords not in the type
@@ -264,12 +285,11 @@ function normalizeDraft201909(schema: Schema): void {
   }
 }
 
-/**
- * Recursively normalize all nested schemas within a schema.
+/** * Recursively normalize all nested schemas within a schema.
  */
 function normalizeNestedSchemas(
   schema: Schema,
-  options: NormalizerOptions,
+  options: DraftNormalizerOptions,
 ): void {
   // Definitions
   if (schema.$defs) {
@@ -400,4 +420,154 @@ function normalizeNestedSchemas(
   if (schema.contentSchema) {
     schema.contentSchema = normalizeSchema(schema.contentSchema, options);
   }
+}
+
+/**
+ * Enhanced normalizer that adds type inference, automatic required field identification,
+ * and support for OpenAPI/Kubernetes extension properties on top of base draft transformations.
+ */
+export class BetterNormalizer implements Normalizer {
+  /**
+   * Performs the normalization process:
+   * 1. Base draft normalization (DraftNormalizer)
+   * 2. Enhanced default value completion (Better logic)
+   */
+  normalize(schema: unknown): Schema {
+    const normalized = normalizeSchema(schema);
+    this.defaultSchema(normalized);
+    return normalized;
+  }
+
+  /**
+   * Recursively processes all sub-nodes of the schema, applying default rules.
+   */
+  private default(schema: Schema, forceRequired = false): Schema {
+    this.defaultSchema(schema.if, true);
+    this.defaultSchema(schema.then);
+    this.defaultSchema(schema.else);
+    schema.anyOf?.forEach((s) => this.defaultSchema(s));
+    schema.oneOf?.forEach((s) => this.defaultSchema(s));
+    schema.allOf?.forEach((s) => this.defaultSchema(s));
+
+    this.defaultSchemaMap(schema.properties, forceRequired);
+    this.defaultSchemaMap(schema.patternProperties, forceRequired);
+    this.defaultSchema(schema.additionalProperties, forceRequired);
+    this.defaultSchema(schema.propertyNames);
+    this.defaultSchemaMap(schema.dependentSchemas, true);
+
+    this.defaultSchema(schema.items);
+    schema.prefixItems?.forEach((s) => this.defaultSchema(s));
+    this.defaultSchema(schema.contains);
+
+    this.defaultSchema(schema.unevaluatedItems);
+    this.defaultSchema(schema.unevaluatedProperties);
+    this.defaultSchema(schema.contentSchema);
+    return schema;
+  }
+
+  /**
+   * Batch processes Record-type sub-schemas.
+   */
+  private defaultSchemaMap(
+    kvs?: Record<string, Schema>,
+    forceRequired = false,
+  ) {
+    if (!kvs) {
+      return;
+    }
+    Object.entries(kvs).forEach(([_, value]) => {
+      this.defaultSchema(value, forceRequired);
+    });
+  }
+
+  /**
+   * Applies inference and heuristic rules to a single schema object.
+   * Includes:
+   * - `type` inference based on properties (object/array)
+   * - Automatically setting properties with `const`/`default`/`enum` as `required`
+   * - Handling `required` fields from OpenAPI `discriminator`
+   * - Handling `x-required` and `x-kubernetes-patch-merge-key`
+   */
+  private defaultSchema(schema?: Schema | boolean, forceRequired = false) {
+    if (!schema || typeof schema === "boolean") {
+      return;
+    }
+    // 1. Type inference: If object/array specific keywords exist but type is undefined
+    if (!schema.type) {
+      if (
+        schema.properties ||
+        schema.patternProperties ||
+        schema.additionalProperties
+      ) {
+        schema.type = "object";
+      } else if (schema.items || schema.prefixItems || schema.additionalItems) {
+        schema.type = "array";
+      }
+    }
+
+    // patternProperties -> minProperties: 1
+    if (schema.patternProperties && schema.minProperties === undefined) {
+      schema.minProperties = 1;
+    }
+
+    // implicit required inference
+    if (schema.required === undefined) {
+      const required = [];
+      for (const [key, value] of Object.entries(schema.properties || {})) {
+        if (
+          forceRequired ||
+          value.const !== undefined ||
+          (Array.isArray(value.enum) && value.enum.length > 0)
+        ) {
+          required.push(key);
+        }
+      }
+      schema.required = required;
+    }
+
+    // OpenAPI discriminator required
+    const discriminator = toObject(schema.discriminator);
+    if (discriminator.propertyName) {
+      if (typeof discriminator.propertyName === "string") {
+        if (schema.required === undefined) {
+          schema.required = [discriminator.propertyName];
+        } else if (!schema.required.includes(discriminator.propertyName)) {
+          schema.required.push(discriminator.propertyName);
+        }
+      }
+    }
+
+    // x-required
+    for (const [key, value] of Object.entries(schema.properties || {})) {
+      if (value["x-required"] === true) {
+        if (schema.required === undefined) {
+          schema.required = [key];
+        } else if (!schema.required.includes(key)) {
+          schema.required.push(key);
+        }
+      }
+    }
+
+    // x-kubernetes-patch-merge-key
+    const mergeKey = schema["x-kubernetes-patch-merge-key"];
+    if (
+      typeof mergeKey === "string" &&
+      typeof schema.items === "object" &&
+      schema.items !== null
+    ) {
+      const items = schema.items as Schema;
+      if (!items.required) items.required = [];
+      if (!items.required.includes(mergeKey)) {
+        items.required.push(mergeKey);
+      }
+    }
+    this.default(schema, forceRequired);
+  }
+}
+
+function toObject(val: unknown): Record<string, unknown> {
+  if (typeof val === "object" && val !== null) {
+    return val as Record<string, unknown>;
+  }
+  return {};
 }

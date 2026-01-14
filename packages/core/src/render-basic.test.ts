@@ -3,7 +3,7 @@ import { SchemaRuntime } from "./render";
 import { Validator } from "./validate";
 import type { Schema } from "./type";
 
-describe("SchemaRuntime", () => {
+describe("SchemaRuntime Basic", () => {
   const validator = new Validator();
 
   it("infers type from value when schema type is missing", () => {
@@ -41,14 +41,40 @@ describe("SchemaRuntime", () => {
     // Initial state: type A -> then branch -> value is string
     // Note: findNode uses jsonPointer. Root is empty string.
     // Properties are at /value
-    let valueNode = runtime.findNode("/value");
+    let valueNode = runtime.getNode("/value");
     expect(valueNode?.schema.type).toBe("string");
 
     // Change type to B -> else branch -> value is number
     runtime.setValue("/type", "B");
 
-    valueNode = runtime.findNode("/value");
-    // With my fix, this should now be number
+    valueNode = runtime.getNode("/value");
+    // Should now be number
     expect(valueNode?.schema.type).toBe("number");
+  });
+});
+
+describe("Advanced Array Features", () => {
+  const validator = new Validator();
+
+  it("supports prefixItems", () => {
+    const schema: Schema = {
+      type: "array",
+      prefixItems: [{ type: "string" }, { type: "number" }],
+      items: { type: "boolean" }, // for the rest
+    };
+    const value = ["foo", 123, true, false];
+    const runtime = new SchemaRuntime(validator, schema, value);
+
+    const node0 = runtime.getNode("/0");
+    expect(node0?.schema.type).toBe("string");
+
+    const node1 = runtime.getNode("/1");
+    expect(node1?.schema.type).toBe("number");
+
+    const node2 = runtime.getNode("/2");
+    expect(node2?.schema.type).toBe("boolean");
+
+    const node3 = runtime.getNode("/3");
+    expect(node3?.schema.type).toBe("boolean");
   });
 });

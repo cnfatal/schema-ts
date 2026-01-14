@@ -21,15 +21,15 @@ describe("Advanced Object Features", () => {
     };
     const runtime = new SchemaRuntime(validator, schema, value);
 
-    const nodeS = runtime.findNode("/S_foo");
+    const nodeS = runtime.getNode("/S_foo");
     expect(nodeS).toBeTruthy();
     expect(nodeS?.schema.type).toBe("string");
 
-    const nodeI = runtime.findNode("/I_bar");
+    const nodeI = runtime.getNode("/I_bar");
     expect(nodeI).toBeTruthy();
     expect(nodeI?.schema.type).toBe("integer");
 
-    const nodeOther = runtime.findNode("/other");
+    const nodeOther = runtime.getNode("/other");
     // Should not match any patternProperties, so it won't be in children unless additionalProperties is handled (which defaults to true but we only generate nodes if schema is present or explicit additionalProperties schema)
     // In our implementation we only generate children for properties, patternProperties, and additionalProperties if schema is provided.
     // If no schema provided for 'other', it won't appear in the tree as a vetted child?
@@ -52,13 +52,13 @@ describe("Advanced Object Features", () => {
     };
     const runtime = new SchemaRuntime(validator, schema, value);
 
-    const nodeExisting = runtime.findNode("/existing");
+    const nodeExisting = runtime.getNode("/existing");
     expect(nodeExisting?.schema.type).toBe("string");
 
-    const nodeExtra1 = runtime.findNode("/extra1");
+    const nodeExtra1 = runtime.getNode("/extra1");
     expect(nodeExtra1?.schema.type).toBe("number");
 
-    const nodeExtra2 = runtime.findNode("/extra2");
+    const nodeExtra2 = runtime.getNode("/extra2");
     expect(nodeExtra2?.schema.type).toBe("number");
   });
 
@@ -72,7 +72,7 @@ describe("Advanced Object Features", () => {
     };
     const runtime = new SchemaRuntime(validator, schema, value);
 
-    const nodeFoo = runtime.findNode("/foo");
+    const nodeFoo = runtime.getNode("/foo");
     expect(nodeFoo).toBeTruthy();
     expect(nodeFoo?.schema).toEqual({});
   });
@@ -89,11 +89,11 @@ describe("Advanced Object Features", () => {
     // Add key via setValue on child path
     runtime.setValue("/newKey", "hello");
     expect(runtime.root.children?.length).toBe(1);
-    expect(runtime.findNode("/newKey")?.schema.type).toBe("string");
+    expect(runtime.getNode("/newKey")?.schema.type).toBe("string");
 
     // Remove key via setValue on parent path
     runtime.setValue("", {});
     expect(runtime.root.children?.length).toBe(0);
-    expect(runtime.findNode("/newKey")).toBeUndefined();
+    expect(runtime.getNode("/newKey")).toBeUndefined();
   });
 });

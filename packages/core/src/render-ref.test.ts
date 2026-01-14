@@ -21,7 +21,7 @@ describe("$ref Support", () => {
       name: "Alice",
     });
 
-    const nameNode = runtime.findNode("/name");
+    const nameNode = runtime.getNode("/name");
     expect(nameNode).toBeTruthy();
     expect(nameNode?.schema.type).toBe("string");
     expect(nameNode?.schema.minLength).toBe(1);
@@ -54,10 +54,10 @@ describe("$ref Support", () => {
       },
     });
 
-    const addressNode = runtime.findNode("/homeAddress");
+    const addressNode = runtime.getNode("/homeAddress");
     expect(addressNode?.schema.type).toBe("object");
 
-    const cityNode = runtime.findNode("/homeAddress/city");
+    const cityNode = runtime.getNode("/homeAddress/city");
     expect(cityNode?.schema.type).toBe("string");
     expect(cityNode?.schema.minLength).toBe(2);
   });
@@ -82,11 +82,11 @@ describe("$ref Support", () => {
       { id: 2, name: "Second" },
     ]);
 
-    const item0 = runtime.findNode("/0");
+    const item0 = runtime.getNode("/0");
     expect(item0?.schema.type).toBe("object");
     expect(item0?.schema.properties?.id).toEqual({ type: "number" });
 
-    const item0Id = runtime.findNode("/0/id");
+    const item0Id = runtime.getNode("/0/id");
     expect(item0Id?.schema.type).toBe("number");
   });
 
@@ -111,12 +111,12 @@ describe("$ref Support", () => {
     });
 
     // mode = text -> then branch -> value is string
-    let valueNode = runtime.findNode("/value");
+    let valueNode = runtime.getNode("/value");
     expect(valueNode?.schema.type).toBe("string");
 
     // Change to mode = number -> else branch -> value is number
     runtime.setValue("/mode", "number");
-    valueNode = runtime.findNode("/value");
+    valueNode = runtime.getNode("/value");
     expect(valueNode?.schema.type).toBe("number");
   });
 
@@ -149,7 +149,7 @@ describe("$ref Support", () => {
 
     // Should match Circle schema
     expect(runtime.root.schema.properties?.radius).toBeDefined();
-    expect(runtime.findNode("/radius")?.schema.type).toBe("number");
+    expect(runtime.getNode("/radius")?.schema.type).toBe("number");
   });
 
   it("merges $ref with sibling properties", () => {
@@ -174,7 +174,7 @@ describe("$ref Support", () => {
       name: "Alice",
     });
 
-    const nameNode = runtime.findNode("/name");
+    const nameNode = runtime.getNode("/name");
     expect(nameNode?.schema.type).toBe("string");
     expect(nameNode?.schema.minLength).toBe(1);
     expect(nameNode?.schema.maxLength).toBe(100);
@@ -202,7 +202,7 @@ describe("$ref Support", () => {
 
     expect(runtime.root.schema.properties?.id).toBeDefined();
     expect(runtime.root.schema.properties?.name).toBeDefined();
-    expect(runtime.findNode("/id")?.schema.type).toBe("number");
-    expect(runtime.findNode("/name")?.schema.type).toBe("string");
+    expect(runtime.getNode("/id")?.schema.type).toBe("number");
+    expect(runtime.getNode("/name")?.schema.type).toBe("string");
   });
 });

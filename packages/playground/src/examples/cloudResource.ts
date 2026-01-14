@@ -1,4 +1,5 @@
 import type { Schema } from "@schema-ts/core";
+import { Example } from ".";
 
 export const cloudResourceSchema: Schema = {
   type: "object",
@@ -105,4 +106,10 @@ export const cloudResourceValue = {
   resourceType: "Compute",
   instanceFamily: "General Purpose",
   size: "medium",
+};
+
+export const cloudResourceExample: Example = {
+  name: "Cloud Resource",
+  schema: cloudResourceSchema,
+  value: cloudResourceValue,
 };

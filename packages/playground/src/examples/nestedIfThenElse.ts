@@ -1,4 +1,5 @@
 import type { Schema } from "@schema-ts/core";
+import { Example } from ".";
 
 export const nestedIfThenElseSchema: Schema = {
   type: "object",
@@ -77,4 +78,10 @@ export const nestedIfThenElseValue = {
   country: "China",
   province: "Guangdong",
   city: "Shenzhen",
+};
+
+export const nestedIfThenElseExample: Example = {
+  name: "Nested If Then Else",
+  schema: nestedIfThenElseSchema,
+  value: nestedIfThenElseValue,
 };

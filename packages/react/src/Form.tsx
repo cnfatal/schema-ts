@@ -243,10 +243,8 @@ export const Form = forwardRef<FormHandle, FormProps>(function Form(
     ref,
     () => ({
       validate: (): boolean => {
-        // Force re-validation by setting the current value
-        // This ensures all fields are validated, including untouched ones
-        const currentValue = runtime.getValue("#");
-        runtime.setValue("#", currentValue);
+        // Trigger validation for the whole form
+        runtime.validate("");
         // Check if there are any errors after validation
         return findFirstErrorNode(runtime.root) === null;
       },
@@ -254,7 +252,7 @@ export const Form = forwardRef<FormHandle, FormProps>(function Form(
         return findFirstErrorNode(runtime.root) === null;
       },
       getValue: (): unknown => {
-        return runtime.getValue("#");
+        return runtime.getValue("");
       },
       scrollToFirstError: (
         options: ScrollIntoViewOptions = {
@@ -280,9 +278,9 @@ export const Form = forwardRef<FormHandle, FormProps>(function Form(
 
   // Sync external value to runtime (only when value actually differs)
   useEffect(() => {
-    const currentValue = runtime.getValue("#");
+    const currentValue = runtime.getValue("");
     if (!deepEqual(currentValue, value)) {
-      runtime.setValue("#", value);
+      runtime.setValue("", value);
     }
   }, [runtime, value]);
 
@@ -290,7 +288,7 @@ export const Form = forwardRef<FormHandle, FormProps>(function Form(
     if (onChange) {
       return runtime.subscribeAll((e: SchemaChangeEvent) => {
         if (e.type === "value") {
-          onChange(runtime.getValue("#"));
+          onChange(runtime.getValue(""));
         }
       });
     }
@@ -299,7 +297,7 @@ export const Form = forwardRef<FormHandle, FormProps>(function Form(
 
   return (
     <FormContext.Provider value={formContextValue}>
-      <FormField path={"#"} runtime={runtime} render={render} />
+      <FormField path={""} runtime={runtime} render={render} />
     </FormContext.Provider>
   );
 });

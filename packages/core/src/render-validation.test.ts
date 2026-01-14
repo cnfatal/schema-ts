@@ -69,7 +69,7 @@ describe("SchemaRuntime Validation", () => {
     expect(rootNode.error).toBeUndefined();
 
     // Child node 'foo' should be invalid
-    const fooNode = runtime.findNode("/foo");
+    const fooNode = runtime.getNode("/foo");
     expect(fooNode).not.toBeNull();
     expect(fooNode?.error?.valid).toBe(false);
     expect(fooNode?.error?.errors?.[0].error).toContain("must be string");

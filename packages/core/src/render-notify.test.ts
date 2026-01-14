@@ -221,7 +221,7 @@ describe("Notify System", () => {
       });
 
       // Initial state: type A -> then branch -> value is string
-      expect(runtime.findNode("/value")?.schema.type).toBe("string");
+      expect(runtime.getNode("/value")?.schema.type).toBe("string");
 
       const events: { type: string; path: string }[] = [];
       // Subscribe to root to receive all events
@@ -231,7 +231,7 @@ describe("Notify System", () => {
       runtime.setValue("/type", "B");
 
       // Verify schema actually changed
-      expect(runtime.findNode("/value")?.schema.type).toBe("number");
+      expect(runtime.getNode("/value")?.schema.type).toBe("number");
 
       // Should have received a schema change event (path will be "" for root)
       expect(events.some((e) => e.type === "schema" && e.path === "")).toBe(
