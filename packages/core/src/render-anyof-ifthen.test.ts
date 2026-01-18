@@ -140,6 +140,7 @@ describe("if-then-else with const vs required+const", () => {
           enabled: { type: "boolean" },
         },
         if: {
+          type: "object",
           properties: { enabled: { const: true } },
         },
         then: {
@@ -168,9 +169,9 @@ describe("if-then-else with const vs required+const", () => {
         enabled: undefined,
       });
       const node2 = runtime2.getNode("/config");
-      // In JavaScript: "enabled" in { enabled: undefined } === true
-      // So const check runs: undefined !== true -> fails -> else branch
-      expect(node2?.schema.title).toBe("Config (else branch)");
+      // In json schema{ enabled: undefined } -> {}
+      // So const check runs: {} -> true -> then branch
+      expect(node2?.schema.title).toBe("Config (then branch)");
 
       // Case 3: enabled is false -> const check fails -> else branch
       const runtime3 = new SchemaRuntime(validator, schema, { enabled: false });

@@ -279,7 +279,7 @@ export class Validator {
         output,
         options,
       );
-    } else if (instanceType === "number") {
+    } else if (instanceType === "number" || instanceType === "integer") {
       this.validateNumber(
         schema,
         value as number,
@@ -563,11 +563,11 @@ export class Validator {
           error: this.formatError(msg),
         });
       },
-      keys = Object.keys(value);
+      definedKeys = Object.keys(value).filter((k) => value[k] !== undefined);
 
     if (
       schema.maxProperties !== undefined &&
-      keys.length > schema.maxProperties
+      definedKeys.length > schema.maxProperties
     ) {
       addError("maxProperties", {
         key: "validation.maxProperties",
@@ -577,7 +577,7 @@ export class Validator {
     }
     if (
       schema.minProperties !== undefined &&
-      keys.length < schema.minProperties
+      definedKeys.length < schema.minProperties
     ) {
       addError("minProperties", {
         key: "validation.minProperties",
@@ -588,7 +588,8 @@ export class Validator {
 
     if (schema.required) {
       for (const req of schema.required) {
-        if (!(req in value)) {
+        // Treat undefined values as missing
+        if (!(req in value) || value[req] === undefined) {
           addError("required", {
             key: "validation.required",
             params: { property: req },
@@ -602,9 +603,11 @@ export class Validator {
       for (const [prop, requiredProps] of Object.entries(
         schema.dependentRequired,
       )) {
-        if (prop in value) {
+        // Only trigger if property exists and is not undefined
+        if (prop in value && value[prop] !== undefined) {
           for (const req of requiredProps) {
-            if (!(req in value)) {
+            // Treat undefined values as missing
+            if (!(req in value) || value[req] === undefined) {
               addError("dependentRequired", {
                 key: "validation.dependentRequired",
                 params: { source: prop, target: req },
@@ -620,7 +623,8 @@ export class Validator {
 
     if (schema.properties) {
       for (const [prop, propSchema] of Object.entries(schema.properties)) {
-        if (prop in value) {
+        // Only validate if property exists and is not undefined
+        if (prop in value && value[prop] !== undefined) {
           validatedKeys.add(prop);
           if (!shallow) {
             const result = this.validate(
@@ -644,7 +648,8 @@ export class Validator {
         schema.patternProperties,
       )) {
         const regex = new RegExp(pattern);
-        for (const key of keys) {
+        // Only check keys with defined values
+        for (const key of definedKeys) {
           if (regex.test(key)) {
             validatedKeys.add(key);
             if (!shallow) {
@@ -666,7 +671,7 @@ export class Validator {
     }
 
     if (schema.additionalProperties !== undefined) {
-      const additionalKeys = keys.filter((k) => !validatedKeys.has(k));
+      const additionalKeys = definedKeys.filter((k) => !validatedKeys.has(k));
       if (typeof schema.additionalProperties === "boolean") {
         if (!schema.additionalProperties && additionalKeys.length > 0) {
           addError("additionalProperties", {
@@ -677,7 +682,8 @@ export class Validator {
         }
       } else {
         for (const key of additionalKeys) {
-          if (!shallow) {
+          // Only validate if value is not undefined
+          if (!shallow && value[key] !== undefined) {
             const result = this.validate(
               schema.additionalProperties,
               value[key],
@@ -695,7 +701,8 @@ export class Validator {
     }
 
     if (schema.propertyNames) {
-      for (const key of keys) {
+      // Only validate names of keys with defined values
+      for (const key of definedKeys) {
         const result = this.validate(
           schema.propertyNames,
           key,
@@ -712,7 +719,8 @@ export class Validator {
 
     if (schema.dependentSchemas) {
       for (const [prop, depSchema] of Object.entries(schema.dependentSchemas)) {
-        if (prop in value) {
+        // Only trigger if property exists and is not undefined
+        if (prop in value && value[prop] !== undefined) {
           const result = this.validate(
             depSchema,
             value,

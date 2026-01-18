@@ -15,6 +15,7 @@ import { type FormMode, useFormContext } from "./FormContext";
 export interface FormFieldRenderProps extends FieldNode {
   value: unknown;
   onChange: (val: unknown) => void;
+  onClear?: () => void;
   runtime: SchemaRuntime;
   mode?: FormMode;
   /**
@@ -48,7 +49,6 @@ export function FormField({ runtime, path, render, ...props }: FormFieldProps) {
   const subscribe = useCallback(
     (onStoreChange: () => void) =>
       runtime.subscribe(path, (e: SchemaChangeEvent) => {
-        // TODO: limit to value/schema changes only?
         if (e.type) {
           onStoreChange();
         }
@@ -63,6 +63,10 @@ export function FormField({ runtime, path, render, ...props }: FormFieldProps) {
     (val: unknown) => runtime.setValue(path, val),
     [runtime, path],
   );
+
+  const onClear = useCallback(() => {
+    runtime.clearValue(path);
+  }, [runtime, path]);
 
   // Create fieldRef callback for DOM element registration
   const instanceLocation = node?.instanceLocation ?? "";
@@ -85,11 +89,12 @@ export function FormField({ runtime, path, render, ...props }: FormFieldProps) {
       value: runtime.getValue(path),
       runtime,
       onChange,
+      onClear,
       fieldRef,
       version,
       ...props,
     } as FormFieldRenderProps;
-  }, [node, version, runtime, onChange, fieldRef, path, props]);
+  }, [node, version, runtime, onChange, onClear, fieldRef, path, props]);
 
   if (!renderProps) return null;
 

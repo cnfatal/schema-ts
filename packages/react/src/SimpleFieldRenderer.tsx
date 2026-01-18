@@ -53,6 +53,9 @@ export interface WidgetProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onChange: (value: any) => void;
 
+  // optional clear handler
+  onClear?: () => void;
+
   // render child field
   renderChild: RenderChild;
 

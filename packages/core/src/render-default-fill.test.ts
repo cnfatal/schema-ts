@@ -925,7 +925,7 @@ describe("Default values on branch switch (if-then-else)", () => {
     expect(runtime.getValue("/config")).toBe("config-for-A");
 
     // Clear config and switch back to A
-    runtime.setValue("/config", undefined);
+    runtime.removeValue("/config");
     runtime.setValue("/mode", "A");
 
     // Now config should get the new default since it was cleared
@@ -966,7 +966,7 @@ describe("Default values on branch switch (if-then-else)", () => {
     expect(runtime.getValue("/level")).toBe(5);
 
     // Clear level
-    runtime.setValue("/level", undefined);
+    runtime.removeValue("/level");
 
     // Switch to premium - should apply default since level is undefined
     runtime.setValue("/type", "premium");

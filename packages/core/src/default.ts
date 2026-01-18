@@ -36,7 +36,7 @@ export function typeNullable(schema: Schema): [string | undefined, boolean] {
  * If a value is provided, it will be used as the base and missing defaults will be filled in.
  *
  * @param schema - The JSON Schema to generate a default value for
- * @param strategy - Controls type-based default behavior
+ * @param required - Whether the property is required (affects object property initialization)
  * @returns The generated default value, or undefined if type cannot be determined
  */
 export function getDefaultValue(
@@ -115,10 +115,12 @@ export function applyDefaults(
       if (obj[key] !== undefined) continue;
       if (schema.required?.includes(key) || subschema.default) {
         const defaultValue = getDefaultValue(subschema, required);
-        if (defaultValue !== undefined) {
-          obj[key] = defaultValue;
-          changed = true;
+        // when defaultValue is undefined, we remove the key to treat it as missing
+        if (defaultValue == undefined) {
+          delete obj[key];
         }
+        obj[key] = defaultValue;
+        changed = true;
       }
     }
     return [obj, changed];
@@ -131,12 +133,8 @@ export function applyDefaults(
     const arr = value as unknown[];
     schema.prefixItems?.forEach((subschema, index) => {
       if (arr[index] !== undefined) return;
-      const defaultValue = getDefaultValue(subschema, true);
-      // if undefined, do not set the array item
-      if (defaultValue !== undefined) {
-        arr[index] = defaultValue;
-        changed = true;
-      }
+      arr[index] = getDefaultValue(subschema, true);
+      changed = true;
     });
     return [arr, changed];
   }

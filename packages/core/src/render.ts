@@ -73,11 +73,6 @@ export interface SchemaRuntimeOptions {
   schemaNormalizer?: Normalizer;
 }
 
-type BuildNodeConfig = {
-  updatedNodes?: Set<string>;
-  setActivated?: boolean;
-};
-
 export class SchemaRuntime {
   private validator: Validator;
 
@@ -219,14 +214,18 @@ export class SchemaRuntime {
    * Uses findNearestExistingNode to find the target node (or parent if path doesn't exist).
    * Only rebuilds the affected subtree, not the entire tree.
    */
-  private reconcile(path: string, config: BuildNodeConfig = {}): void {
+  private reconcile(path: string): void {
     // Find target node (or nearest parent)
     const targetNode = this.findNearestExistingNode(path);
     if (!targetNode) {
       return;
     }
+    // when setActivated is true, mark node as activated
+    // also activate if value is defined
+    targetNode.activated = true;
+
     // Build node from target path
-    this.buildNode(targetNode, targetNode.originalSchema, config);
+    this.buildNode(targetNode, targetNode.originalSchema);
   }
 
   /**
@@ -353,13 +352,13 @@ export class SchemaRuntime {
   }
 
   /**
-   * Internal method to remove a value at a path.
-   * Shared logic for removeValue and setValue(undefined).
-   * @param path - The normalized path to remove
-   * @param canRemove - Whether the removal is allowed (pre-checked by caller)
-   * @returns true if successful, false if removal failed
+   * Remove a node at the specified path.
+   * This deletes the value from the data structure (array splice or object delete).
+   * After removal, may also remove empty parent containers based on removeEmptyContainers option.
+   * @param path - The path to remove
+   * @returns true if successful, false if the path cannot be removed
    */
-  private removeValueInternal(path: string): boolean {
+  removeValue(path: string): boolean {
     // Remove the value
     const success = removeJsonPointer(this.value, path);
     if (!success) {
@@ -373,17 +372,6 @@ export class SchemaRuntime {
     this.reconcile(reconcilePath);
     this.notify({ type: "value", path: reconcilePath });
     return true;
-  }
-
-  /**
-   * Remove a node at the specified path.
-   * This deletes the value from the data structure (array splice or object delete).
-   * After removal, may also remove empty parent containers based on removeEmptyContainers option.
-   * @param path - The path to remove
-   * @returns true if successful, false if the path cannot be removed
-   */
-  removeValue(path: string): boolean {
-    return this.removeValueInternal(path);
   }
 
   /**
@@ -525,13 +513,12 @@ export class SchemaRuntime {
    */
   addChild(parentPath: string, key?: string, initialValue?: unknown): boolean {
     const parentNode = this.getNode(parentPath);
-    if (!parentNode || !parentNode.canAdd) {
+    if (!parentNode) {
       return false;
     }
+
     const parentValue = this.getValue(parentPath);
 
-    // Auto-initialize container only if value is undefined or null
-    // If value exists but type mismatches, return false (don't overwrite)
     if (parentNode.type === "array") {
       return this.addArrayItem(parentNode, parentValue, initialValue);
     } else if (parentNode.type === "object") {
@@ -561,17 +548,31 @@ export class SchemaRuntime {
    * runtime.setValue("/optional", undefined); // remove optional field
    */
   setValue(path: string, value: unknown): boolean {
-    // Handle undefined value: try to remove the field if it's optional
     if (value === undefined) {
-      return this.removeValueInternal(path);
+      return this.clearValue(path);
     }
-    // Update value
-    const success = this.setJsonPointer(path, value);
-    if (!success) return false;
-    // Reconcile and notify
+    if (!this.setJsonPointer(path, value)) return false;
+    // when setting a value, also mark node as activated
     this.reconcile(path);
     this.notify({ type: "value", path });
     return true;
+  }
+
+  clearValue(path: string): boolean {
+    const node = this.getNode(path);
+    // If node is known and required, do not remove, but reset
+    if (node && node.required) {
+      // set to null to keep key present
+      // if value not nullable, validation will handle error
+      const success = this.setJsonPointer(path, null);
+      if (success) {
+        this.reconcile(path);
+        this.notify({ type: "value", path });
+      }
+      return success;
+    }
+    // not required, remove the value
+    return this.removeValue(path);
   }
 
   /**
@@ -614,10 +615,6 @@ export class SchemaRuntime {
   }
 
   validate(path: string): void {
-    const node = this.getNode(path);
-    if (node) {
-      this.buildNode(node, undefined, { setActivated: true });
-    }
     this.reconcile(path);
     this.notify({ type: "value", path });
   }
@@ -695,7 +692,9 @@ export class SchemaRuntime {
   private buildNodeChildren(
     node: FieldNode,
     value: unknown,
-    options: BuildNodeConfig,
+    options: {
+      updatedNodes?: Set<string>;
+    },
   ): void {
     const { keywordLocation, instanceLocation } = node;
     const effectiveSchema = node.schema;
@@ -711,12 +710,15 @@ export class SchemaRuntime {
       oldChildrenMap.set(child.instanceLocation, child);
     }
 
+    const isActivated = node.activated;
+
     const processChild = (
       childKey: string,
       childSchema: Schema,
       childkeywordLocation: string,
       canRemove: boolean = false,
       isRequired: boolean = false,
+      isActivated: boolean = false,
     ) => {
       const childinstanceLocation = jsonPointerJoin(instanceLocation, childKey);
       if (processedKeys.has(childinstanceLocation)) {
@@ -740,6 +742,7 @@ export class SchemaRuntime {
           : childkeywordLocation;
       childNode.canRemove = canRemove;
       childNode.required = isRequired;
+      childNode.activated = isActivated;
       this.buildNode(childNode, childSchema, { ...options });
       newChildren.push(childNode);
     };
@@ -770,6 +773,7 @@ export class SchemaRuntime {
               `${keywordLocation}/properties/${key}`,
               false,
               isChildRequired,
+              isActivated,
             );
           }
         }
@@ -787,6 +791,7 @@ export class SchemaRuntime {
                   `${keywordLocation}/patternProperties/${jsonPointerEscape(pattern)}`,
                   true,
                   false, // patternProperties are never required
+                  isActivated,
                 );
               }
             }
@@ -807,6 +812,7 @@ export class SchemaRuntime {
               `${keywordLocation}/additionalProperties`,
               true,
               false, // additionalProperties are never required
+              isActivated,
             );
           }
         }
@@ -833,6 +839,7 @@ export class SchemaRuntime {
                 `${keywordLocation}/prefixItems/${i}`,
                 false,
                 true, // array prefix items are always considered required
+                isActivated,
               );
             }
           }
@@ -846,6 +853,7 @@ export class SchemaRuntime {
                 `${keywordLocation}/items`,
                 true,
                 true, // array items are always considered required
+                isActivated,
               );
             }
           }
@@ -873,16 +881,12 @@ export class SchemaRuntime {
   private buildNode(
     node: FieldNode,
     schema?: Schema,
-    options: BuildNodeConfig = {},
+    options: {
+      updatedNodes?: Set<string>;
+    } = {},
   ): void {
     const { keywordLocation, instanceLocation } = node;
     const value = this.getValue(instanceLocation);
-
-    // when setActivated is true, mark node as activated
-    // also activate if value is defined
-    if (options.setActivated) {
-      node.activated = true;
-    }
 
     // Circular update protection
     if (this.updatingNodes.has(instanceLocation)) {
@@ -904,6 +908,9 @@ export class SchemaRuntime {
         this.updateNodeDependencies(node, schema);
       }
 
+      const shouldValidate =
+        node.activated && (value !== undefined || node.required);
+
       // Resolve effective schema based on current value
       const { type, effectiveSchema, error } = resolveEffectiveSchema(
         this.validator,
@@ -911,7 +918,7 @@ export class SchemaRuntime {
         value,
         keywordLocation,
         instanceLocation,
-        node.activated,
+        shouldValidate,
       );
 
       // Detect changes for notifications
@@ -941,7 +948,6 @@ export class SchemaRuntime {
       // Re-fetch value in case defaults were applied
       const currentValue = this.getValue(instanceLocation);
       this.buildNodeChildren(node, currentValue, {
-        setActivated: options.setActivated || undefined, // propagate activation
         updatedNodes,
       });
 
@@ -953,7 +959,6 @@ export class SchemaRuntime {
       if (dependentNodes) {
         for (const dependentNode of dependentNodes) {
           this.buildNode(dependentNode, undefined, {
-            setActivated: undefined, // do not change dependent node activation state
             updatedNodes,
           });
         }

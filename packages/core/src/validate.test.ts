@@ -33,6 +33,20 @@ describe("validateSchema", () => {
     expect(validateSchema(schema, 13).valid).toBe(false); // not multipleOf
   });
 
+  it("validates integer constraints", () => {
+    const schema = {
+      type: "integer",
+      minimum: 10,
+      maximum: 20,
+      multipleOf: 2,
+    };
+    expect(validateSchema(schema, 12).valid).toBe(true);
+    expect(validateSchema(schema, 8).valid).toBe(false); // < min
+    expect(validateSchema(schema, 22).valid).toBe(false); // > max
+    expect(validateSchema(schema, 13).valid).toBe(false); // not multipleOf
+    expect(validateSchema(schema, 12.5).valid).toBe(false); // not integer
+  });
+
   it("validates string constraints", () => {
     const schema = {
       type: "string",

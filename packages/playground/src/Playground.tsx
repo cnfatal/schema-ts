@@ -97,6 +97,17 @@ export const Playground = ({ examples }: { examples?: Example[] }) => {
     setValueStr(dump(newValue));
   };
 
+  const handleSubmit = () => {
+    if (formRef.current) {
+      const isValid = formRef.current.validate();
+      if (!isValid) {
+        formRef.current.scrollToFirstError();
+      } else {
+        window.alert("Form submitted successfully!");
+      }
+    }
+  };
+
   return (
     <ThemeProvider>
       <Flex direction="column" sx={{ height: "100vh" }}>
@@ -196,12 +207,8 @@ export const Playground = ({ examples }: { examples?: Example[] }) => {
                 <SectionHeader
                   title="Real-time UI Preview"
                   actions={
-                    <Button
-                      variant="soft"
-                      size="small"
-                      onClick={() => formRef.current?.scrollToFirstError()}
-                    >
-                      Scroll to Error
+                    <Button size="small" onClick={handleSubmit}>
+                      Submit
                     </Button>
                   }
                 />

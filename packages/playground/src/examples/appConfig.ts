@@ -3,259 +3,245 @@ import { Example } from ".";
 
 export const appConfigSchema: Schema = {
   type: "object",
-  title: "Enterprise Application Deployment",
   properties: {
-    metadata: {
+    basic: {
       type: "object",
-      title: "Metadata",
+      title: "Basic Settings",
       properties: {
-        appName: {
+        image: {
           type: "string",
-          title: "Application Name",
-          minLength: 3,
-          default: "enterprise-service",
+          title: "Image",
+          default: "nginx:latest",
         },
-        environment: {
-          type: "string",
-          title: "Environment",
-          enum: ["production", "staging", "development"],
-          default: "development",
-        },
-        clusterId: {
-          type: "string",
-          title: "Target Cluster",
-          const: "k8s-main-cluster",
-          default: "k8s-main-cluster",
-        },
-      },
-      required: ["appName", "environment"],
-    },
-    resources: {
-      type: "object",
-      title: "Resource Configuration",
-      properties: {
-        cpuLimit: {
-          type: "number",
-          title: "CPU Limit (Cores)",
-          minimum: 0.1,
-          maximum: 32,
-          default: 1,
-        },
-        memoryLimit: {
-          type: "number",
-          title: "Memory Limit (MB)",
-          minimum: 128,
-          maximum: 65536,
-          multipleOf: 128,
-          default: 1024,
-        },
-      },
-    },
-    networking: {
-      type: "object",
-      title: "Network Configuration",
-      oneOf: [
-        {
-          title: "Public Ingress",
-          properties: {
-            accessType: { const: "public", title: "Access Type" },
-            domain: {
-              type: "string",
-              format: "hostname",
-              title: "Domain Name",
-            },
-            protocol: {
-              type: "string",
-              enum: ["http", "https"],
-              default: "https",
-            },
-          },
-          required: ["accessType", "domain"],
-        },
-        {
-          title: "Internal Cluster-IP",
-          properties: {
-            accessType: { const: "internal", title: "Access Type" },
-            port: {
-              type: "integer",
-              minimum: 1,
-              maximum: 65535,
-              default: 8080,
-              title: "Internal Port",
-            },
-          },
-          required: ["accessType"],
-        },
-      ],
-    },
-    storage: {
-      type: "array",
-      title: "Storage Volumes",
-      items: {
-        type: "object",
-        properties: {
-          type: {
-            type: "string",
-            enum: ["s3", "ebs"],
-            title: "Storage Type",
-          },
-        },
-        anyOf: [
-          {
-            title: "Object Storage (S3)",
-            properties: {
-              type: { const: "s3", title: "Storage Type" },
-              bucket: { type: "string", title: "Bucket Name" },
-              region: {
-                type: "string",
-                enum: ["us-east-1", "eu-west-1", "ap-northeast-1"],
-                default: "us-east-1",
-              },
-            },
-            required: ["type", "bucket"],
-          },
-          {
-            title: "Block Storage (EBS)",
-            properties: {
-              type: { const: "ebs", title: "Storage Type" },
-              size: {
-                type: "integer",
-                minimum: 10,
-                maximum: 5000,
-                default: 100,
-                title: "Size (GB)",
-              },
-              encrypted: {
-                type: "boolean",
-                title: "Encryption",
-                default: true,
-              },
-            },
-            required: ["type"],
-          },
-        ],
-      },
-    },
-    appConfigs: {
-      type: "object",
-      title: "Application Runtime settings",
-      properties: {
-        runtime: {
-          type: "string",
-          enum: ["nodejs", "python", "go"],
-          default: "nodejs",
-          title: "Execution Runtime",
-        },
-        commandOverride: {
+        imageAuth: {
           type: "object",
-          title: "Command & Lifecycle",
-          description: "Demonstrates distinguishing between [] and undefined",
+          title: "Image Authentication",
           properties: {
             enabled: {
               type: "boolean",
-              title: "Enable Custom Command",
+              title: "Enable Authentication",
               default: false,
             },
           },
-          if: { properties: { enabled: { const: true } } },
+          if: {
+            properties: {
+              enabled: {
+                const: true,
+              },
+            },
+          },
           then: {
             properties: {
-              command: {
-                type: "array",
-                title: "Command",
-                items: { type: "string" },
-                default: [], // Forces [] in data when enabled
-                description: "Even if empty, this will exist as [] in the data",
-              },
-              args: {
-                type: "array",
-                title: "Arguments",
-                items: { type: "string" },
-              },
-              workingDir: {
+              username: {
                 type: "string",
-                title: "Working Directory",
-                format: "path",
-                default: "/app",
+                title: "Username",
+              },
+              password: {
+                type: "string",
+                title: "Password",
+                format: "password",
+              },
+            },
+          },
+        },
+        flavor: {
+          type: "object",
+          title: "Flavor",
+          "x-resource-enum": {
+            resource: "flavors",
+            type: "cpu,gpu",
+          },
+          properties: {
+            resources: {
+              type: "object",
+            },
+            nodeSelector: {
+              type: "object",
+            },
+            nodeAffinity: {
+              type: "object",
+            },
+          },
+        },
+        mode: {
+          type: "string",
+          title: "Workload Type",
+          enum: ["deployment", "statefulset"],
+          default: "deployment",
+        },
+        replicas: {
+          type: "integer",
+          title: "Replicas",
+          default: 1,
+          minimum: 1,
+        },
+        autoScaling: {
+          type: "object",
+          title: "Auto Scaling",
+          properties: {
+            enabled: {
+              type: "boolean",
+              title: "Enable Auto Scaling",
+              default: false,
+            },
+          },
+          if: {
+            properties: {
+              enabled: {
+                const: true,
+              },
+            },
+          },
+          then: {
+            properties: {
+              minReplicas: {
+                type: "integer",
+                title: "Min Replicas",
+                default: 1,
+                minimum: 1,
+              },
+              maxReplicas: {
+                type: "integer",
+                title: "Max Replicas",
+                default: 5,
+                minimum: 1,
+              },
+              cpu: {
+                type: "integer",
+                title: "Target CPU Utilization (%)",
+                default: 80,
+                minimum: 1,
+                maximum: 100,
+              },
+              memory: {
+                type: "integer",
+                title: "Target Memory Utilization (%)",
+                default: 80,
+                minimum: 1,
+                maximum: 100,
               },
             },
           },
         },
       },
-      required: ["runtime"],
-      allOf: [
-        {
-          if: { properties: { runtime: { const: "nodejs" } } },
-          then: {
-            properties: {
-              nodeVersion: {
-                type: "string",
-                enum: ["18-lts", "20-lts", "22-latest"],
-                default: "20-lts",
-                title: "Node.js Version",
-              },
-              packageRegistry: {
-                type: "string",
-                format: "uri",
-                title: "NPM Registry",
-                default: "https://registry.npmjs.org",
-              },
-            },
-          },
-        },
-        {
-          if: { properties: { runtime: { const: "python" } } },
-          then: {
-            properties: {
-              pythonVersion: {
-                type: "string",
-                enum: ["3.9", "3.10", "3.11"],
-                default: "3.11",
-                title: "Python Version",
-              },
-              pipRegistry: {
-                type: "string",
-                format: "uri",
-                title: "PyPI Index",
-                default: "https://pypi.org/simple",
-              },
-            },
-          },
-        },
-      ],
     },
-  },
-  // Global condition: metadata.environment affects resource defaults
-  if: {
-    properties: {
-      metadata: {
-        properties: { environment: { const: "production" } },
-      },
-    },
-  },
-  then: {
-    properties: {
-      resources: {
-        properties: {
-          cpuLimit: { minimum: 2, default: 4 },
-          memoryLimit: { minimum: 2048, default: 4096 },
-        },
-      },
-      scaling: {
+    network: {
+      type: "array",
+      title: "Network Configuration",
+      items: {
         type: "object",
-        title: "Production Scaling",
+        required: ["port", "protocol"],
         properties: {
-          minReplicas: { type: "integer", minimum: 3, default: 3 },
-          maxReplicas: { type: "integer", maximum: 50, default: 10 },
-          targetCPU: {
+          protocol: {
+            type: "string",
+            title: "Protocol",
+            enum: ["http", "https", "grpc", "grpcs", "ws", "wss", "tcp", "udp"],
+            default: "http",
+          },
+          port: {
             type: "integer",
-            title: "Target CPU Usage (%)",
-            minimum: 10,
-            maximum: 95,
-            default: 70,
+            title: "Port",
+            default: 80,
+            minimum: 1,
+            maximum: 65535,
+          },
+          exposed: {
+            type: "boolean",
+            title: "Enable External Access",
+            default: false,
           },
         },
-        required: ["minReplicas", "maxReplicas"],
+        if: {
+          properties: {
+            exposed: {
+              const: true,
+            },
+            protocol: {
+              enum: ["http", "https", "grpc", "grpcs", "ws", "wss"],
+            },
+          },
+        },
+        then: {
+          properties: {
+            ingressHost: {
+              type: "string",
+              title: "Domain Name",
+              "x-generate": {
+                type: "ingress-hostname",
+              },
+            },
+          },
+        },
+      },
+    },
+    advanced: {
+      type: "object",
+      title: "Advanced Settings",
+      "x-collapse": true,
+      properties: {
+        command: {
+          title: "Start Command",
+          description: "Container start command, e.g. 'sh -c'",
+          type: "string",
+        },
+        args: {
+          title: "Start Arguments",
+          description:
+            "Container start arguments, e.g. 'echo starting && ./start-server'",
+          type: "string",
+        },
+        envfile: {
+          type: "string",
+          title: "Environment Variables",
+          description: "KEY=VALUE format, one per line",
+          maxLength: 1000,
+        },
+        configs: {
+          type: "array",
+          title: "Config Files",
+          items: {
+            type: "object",
+            properties: {
+              path: {
+                type: "string",
+                title: "Mount Path",
+              },
+              data: {
+                type: "string",
+                title: "File Content",
+                maxLength: 10000,
+              },
+            },
+          },
+        },
+        mounts: {
+          type: "array",
+          title: "Storage Volumes",
+          items: {
+            type: "object",
+            properties: {
+              path: {
+                type: "string",
+                title: "Mount Path",
+              },
+              size: {
+                type: "string",
+                title: "Capacity",
+                format: "quantity",
+                default: "1Gi",
+                "x-quantity": {
+                  min: "1Gi",
+                  max: "100Gi",
+                },
+              },
+              storageClassName: {
+                type: "string",
+                title: "Storage Class",
+                description: "Leave empty to use default storage class",
+              },
+            },
+          },
+        },
       },
     },
   },
@@ -264,7 +250,7 @@ export const appConfigSchema: Schema = {
 export const appConfigValue = {};
 
 export const appConfigExample: Example = {
-  name: "Ultimate App Deployment (Complex)",
+  name: "Application Configuration",
   schema: appConfigSchema,
   value: appConfigValue,
 };
