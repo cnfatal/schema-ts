@@ -1,5 +1,11 @@
 # @schema-ts/core
 
+## 0.1.6
+
+### Patch Changes
+
+- 5a16ac5: default and remove logic
+
 ## 0.1.5
 
 ### Patch Changes
