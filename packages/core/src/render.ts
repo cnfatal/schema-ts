@@ -686,24 +686,144 @@ export class SchemaRuntime {
   }
 
   /**
-   * Build children for object and array nodes.
-   * Reuses existing child nodes where possible.
+   * Build/update a FieldNode using two-phase approach.
+   * Phase 1: Build structure and apply defaults (recursive)
+   * Phase 2: Validate all nodes (recursive)
+   *
+   * This separation ensures all defaults are applied before any validation runs,
+   * which is critical for if-then-else schema switches where child nodes need
+   * their defaults filled before parent validation checks constraints like minProperties.
+   *
+   * @param schema - Optional. If provided, updates node.originalSchema. Otherwise uses existing.
    */
-  private buildNodeChildren(
+  private buildNode(
     node: FieldNode,
-    value: unknown,
+    schema?: Schema,
     options: {
       updatedNodes?: Set<string>;
-    },
+    } = {},
   ): void {
+    // Track updated nodes to prevent duplicate updates
+    const updatedNodes = options.updatedNodes || new Set<string>();
+
+    // Phase 1: Build structure and apply defaults for entire subtree
+    const changedNodes = this.buildNodeStructure(node, schema, updatedNodes);
+
+    // Phase 2: Validate all changed nodes after defaults are fully applied
+    this.validateNodes(changedNodes);
+
+    // Propagate updates to dependent nodes (outside the two-phase build)
+    const { instanceLocation } = node;
+    const dependentNodes = this.dependentsMap.get(instanceLocation);
+    if (dependentNodes) {
+      for (const dependentNode of dependentNodes) {
+        this.buildNode(dependentNode, undefined, { updatedNodes });
+      }
+    }
+  }
+
+  /**
+   * Phase 1: Build node structure and apply defaults.
+   * Recursively builds the node tree without validation.
+   * Returns list of nodes that need validation.
+   */
+  private buildNodeStructure(
+    node: FieldNode,
+    schema: Schema | undefined,
+    updatedNodes: Set<string>,
+  ): FieldNode[] {
+    const { keywordLocation, instanceLocation } = node;
+    const value = this.getValue(instanceLocation);
+
+    // Circular update protection
+    if (this.updatingNodes.has(instanceLocation)) {
+      return [];
+    }
+    if (updatedNodes.has(instanceLocation)) {
+      return [];
+    }
+    this.updatingNodes.add(instanceLocation);
+
+    const changedNodes: FieldNode[] = [];
+
+    try {
+      // Update dependencies if schema changed
+      const schemaChanged =
+        schema !== undefined && !deepEqual(schema, node.originalSchema);
+      if (schemaChanged) {
+        node.originalSchema = schema;
+        this.updateNodeDependencies(node, schema);
+      }
+
+      // Resolve effective schema WITHOUT validation
+      const { type, effectiveSchema } = resolveEffectiveSchema(
+        this.validator,
+        node.originalSchema,
+        value,
+        keywordLocation,
+        instanceLocation,
+        false,
+      );
+
+      // Detect if effective schema changed
+      const effectiveSchemaChanged =
+        !deepEqual(effectiveSchema, node.schema) || type !== node.type;
+
+      // Apply defaults when effective schema changes
+      if (effectiveSchemaChanged) {
+        this.applySchemaDefaults(
+          instanceLocation,
+          effectiveSchema,
+          type,
+          node.required,
+        );
+      }
+
+      // Update node state (without error - that comes in phase 2)
+      node.schema = effectiveSchema;
+      node.type = type;
+      node.version++;
+
+      // Mark this node as updated
+      updatedNodes.add(instanceLocation);
+
+      // This node needs validation
+      changedNodes.push(node);
+
+      // Build children recursively - they will also apply their defaults
+      const currentValue = this.getValue(instanceLocation);
+      const childChangedNodes = this.buildNodeChildrenStructure(
+        node,
+        currentValue,
+        updatedNodes,
+      );
+      changedNodes.push(...childChangedNodes);
+
+      // Notify schema change
+      if (effectiveSchemaChanged) {
+        this.notify({ type: "schema", path: instanceLocation });
+      }
+    } finally {
+      this.updatingNodes.delete(instanceLocation);
+    }
+
+    return changedNodes;
+  }
+
+  /**
+   * Build children structure without validation.
+   * Returns list of child nodes that need validation.
+   */
+  private buildNodeChildrenStructure(
+    node: FieldNode,
+    value: unknown,
+    updatedNodes: Set<string>,
+  ): FieldNode[] {
     const { keywordLocation, instanceLocation } = node;
     const effectiveSchema = node.schema;
     const type = node.type;
 
-    // record this child key as processed
     const processedKeys = new Set<string>();
-
-    // Build new children array to maintain correct order
     const newChildren: FieldNode[] = [];
     const oldChildrenMap = new Map<string, FieldNode>();
     for (const child of node.children || []) {
@@ -711,6 +831,7 @@ export class SchemaRuntime {
     }
 
     const isActivated = node.activated;
+    const changedNodes: FieldNode[] = [];
 
     const processChild = (
       childKey: string,
@@ -721,12 +842,12 @@ export class SchemaRuntime {
       isActivated: boolean = false,
     ) => {
       const childinstanceLocation = jsonPointerJoin(instanceLocation, childKey);
+
       if (processedKeys.has(childinstanceLocation)) {
         return;
       }
       processedKeys.add(childinstanceLocation);
 
-      // Reuse existing child node or create new one
       let childNode = oldChildrenMap.get(childinstanceLocation);
       if (!childNode) {
         childNode = this.createEmptyNode(
@@ -735,7 +856,6 @@ export class SchemaRuntime {
         );
       }
       childNode.keywordLocation = childkeywordLocation;
-      // Use x-origin-keyword from schema if available, otherwise use the constructed keywordLocation
       childNode.originKeywordLocation =
         typeof childSchema["x-origin-keyword"] === "string"
           ? childSchema["x-origin-keyword"]
@@ -743,7 +863,14 @@ export class SchemaRuntime {
       childNode.canRemove = canRemove;
       childNode.required = isRequired;
       childNode.activated = isActivated;
-      this.buildNode(childNode, childSchema, { ...options });
+
+      // Recursively build child structure
+      const childChangedNodes = this.buildNodeStructure(
+        childNode,
+        childSchema,
+        updatedNodes,
+      );
+      changedNodes.push(...childChangedNodes);
       newChildren.push(childNode);
     };
 
@@ -752,14 +879,11 @@ export class SchemaRuntime {
         const valueKeys =
           value && typeof value === "object" ? Object.keys(value) : [];
 
-        // Set canAdd based on additionalProperties
         node.canAdd =
           !!effectiveSchema.additionalProperties ||
           !!effectiveSchema.patternProperties;
 
-        // Process properties (cannot be removed)
         if (effectiveSchema.properties) {
-          // Sort by x-order if present (lower values first, undefined comes last)
           const propertyEntries = this.sortPropertiesByOrder(
             Object.entries(effectiveSchema.properties),
           );
@@ -778,7 +902,6 @@ export class SchemaRuntime {
           }
         }
 
-        // Process patternProperties (can be removed)
         if (effectiveSchema.patternProperties) {
           for (const [pattern, subschema] of Object.entries(
             effectiveSchema.patternProperties,
@@ -790,7 +913,7 @@ export class SchemaRuntime {
                   subschema,
                   `${keywordLocation}/patternProperties/${jsonPointerEscape(pattern)}`,
                   true,
-                  false, // patternProperties are never required
+                  false,
                   isActivated,
                 );
               }
@@ -798,7 +921,6 @@ export class SchemaRuntime {
           }
         }
 
-        // Process additionalProperties (can be removed)
         if (effectiveSchema.additionalProperties) {
           const subschema =
             typeof effectiveSchema.additionalProperties === "object"
@@ -811,7 +933,7 @@ export class SchemaRuntime {
               subschema,
               `${keywordLocation}/additionalProperties`,
               true,
-              false, // additionalProperties are never required
+              false,
               isActivated,
             );
           }
@@ -819,13 +941,11 @@ export class SchemaRuntime {
         break;
       }
       case "array": {
-        // Set canAdd based on items schema
         node.canAdd = !!effectiveSchema.items;
 
         if (Array.isArray(value)) {
           let prefixItemsLength = 0;
 
-          // Process prefixItems (cannot be removed)
           if (effectiveSchema.prefixItems) {
             prefixItemsLength = effectiveSchema.prefixItems.length;
             for (
@@ -838,13 +958,12 @@ export class SchemaRuntime {
                 effectiveSchema.prefixItems[i],
                 `${keywordLocation}/prefixItems/${i}`,
                 false,
-                true, // array prefix items are always considered required
+                true,
                 isActivated,
               );
             }
           }
 
-          // Process items (can be removed)
           if (effectiveSchema.items && value.length > prefixItemsLength) {
             for (let i = prefixItemsLength; i < value.length; i++) {
               processChild(
@@ -852,7 +971,7 @@ export class SchemaRuntime {
                 effectiveSchema.items,
                 `${keywordLocation}/items`,
                 true,
-                true, // array items are always considered required
+                true,
                 isActivated,
               );
             }
@@ -862,7 +981,7 @@ export class SchemaRuntime {
       }
     }
 
-    // Cleanup removed children and unregister their dependencies
+    // Cleanup removed children
     for (const [location, child] of oldChildrenMap) {
       if (!processedKeys.has(location)) {
         this.unregisterNodeDependencies(child);
@@ -870,111 +989,40 @@ export class SchemaRuntime {
     }
 
     node.children = newChildren;
+    return changedNodes;
   }
 
   /**
-   * Build/update a FieldNode in place.
-   * Updates the node's schema, type, error, and children based on the current value.
-   * @param schema - Optional. If provided, updates node.originalSchema. Otherwise uses existing.
-   * @param isRequired - Whether this node is required by its parent schema.
+   * Phase 2: Validate all nodes after structure is built and defaults applied.
+   * This ensures validation sees the final values including all defaults.
    */
-  private buildNode(
-    node: FieldNode,
-    schema?: Schema,
-    options: {
-      updatedNodes?: Set<string>;
-    } = {},
-  ): void {
-    const { keywordLocation, instanceLocation } = node;
-    const value = this.getValue(instanceLocation);
-
-    // Circular update protection
-    if (this.updatingNodes.has(instanceLocation)) {
-      return;
-    }
-    // Track updated nodes to prevent duplicate updates
-    const updatedNodes = options.updatedNodes || new Set<string>();
-    if (updatedNodes.has(instanceLocation)) {
-      return;
-    }
-    this.updatingNodes.add(instanceLocation);
-
-    try {
-      // Update dependencies if schema changed
-      const schemaChanged =
-        schema !== undefined && !deepEqual(schema, node.originalSchema);
-      if (schemaChanged) {
-        node.originalSchema = schema;
-        this.updateNodeDependencies(node, schema);
-      }
+  private validateNodes(nodes: FieldNode[]): void {
+    for (const node of nodes) {
+      const { keywordLocation, instanceLocation } = node;
+      const value = this.getValue(instanceLocation);
 
       const shouldValidate =
         node.activated && (value !== undefined || node.required);
 
-      // Resolve effective schema based on current value
-      const { type, effectiveSchema, error } = resolveEffectiveSchema(
-        this.validator,
-        node.originalSchema,
-        value,
-        keywordLocation,
-        instanceLocation,
-        shouldValidate,
-      );
-
-      // Detect changes for notifications
-      const effectiveSchemaChanged =
-        !deepEqual(effectiveSchema, node.schema) || type !== node.type;
-      const errorChanged = !deepEqual(error, node.error);
-
-      // Apply defaults when effective schema changes (e.g., if-then-else branch switch, or initial construction)
-      // applySchemaDefaults will respect the autoFillDefaults option internally
-      // Child nodes will be built after and will send their own notifications
-      if (effectiveSchemaChanged) {
-        this.applySchemaDefaults(
+      let error: Output | undefined;
+      if (shouldValidate) {
+        const validated = resolveEffectiveSchema(
+          this.validator,
+          node.originalSchema,
+          value,
+          keywordLocation,
           instanceLocation,
-          effectiveSchema,
-          type,
-          node.required,
+          true,
         );
+        error = validated.error;
       }
 
-      // Update node state
-      node.schema = effectiveSchema;
-      node.type = type;
+      const errorChanged = !deepEqual(error, node.error);
       node.error = error;
-      node.version++;
 
-      // Build children - pass updatedNodes to ensure proper tracking
-      // Re-fetch value in case defaults were applied
-      const currentValue = this.getValue(instanceLocation);
-      this.buildNodeChildren(node, currentValue, {
-        updatedNodes,
-      });
-
-      // Mark this node as updated
-      updatedNodes.add(instanceLocation);
-
-      // Propagate updates to dependent nodes
-      const dependentNodes = this.dependentsMap.get(instanceLocation);
-      if (dependentNodes) {
-        for (const dependentNode of dependentNodes) {
-          this.buildNode(dependentNode, undefined, {
-            updatedNodes,
-          });
-        }
-      }
-
-      // Send notifications for this node
-      // Child nodes handle their own notifications in buildNodeChildren -> buildNode
-      // Notify after all updates are done to prevent duplicate notifications
-      if (effectiveSchemaChanged) {
-        this.notify({ type: "schema", path: instanceLocation });
-      }
       if (errorChanged) {
         this.notify({ type: "error", path: instanceLocation });
       }
-    } finally {
-      this.updatingNodes.delete(instanceLocation);
     }
   }
 }
