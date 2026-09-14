@@ -1,5 +1,12 @@
 # @schema-ts/react
 
+## 0.2.2
+
+### Patch Changes
+
+- Updated dependencies [742894f]
+  - @schema-ts/core@0.2.2
+
 ## 0.2.1
 
 ### Patch Changes
