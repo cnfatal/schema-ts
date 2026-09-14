@@ -1,6 +1,5 @@
 import js from "@eslint/js";
 import configPrettier from "eslint-config-prettier";
-import pluginImport from "eslint-plugin-import";
 import pluginPrettier from "eslint-plugin-prettier";
 import { defineConfig } from "eslint/config";
 import globals from "globals";
@@ -19,22 +18,12 @@ export default defineConfig(
   js.configs.recommended,
   ...tsConfigs.recommended,
 
-  // 3. Import Plugin Configuration
-  pluginImport.flatConfigs.recommended,
-  pluginImport.flatConfigs.typescript,
-
   // 4. Global Settings & Language Options
   {
     languageOptions: {
       ecmaVersion: "latest",
       globals: { ...globals.browser, ...globals.node },
       sourceType: "module",
-    },
-    settings: {
-      "import/resolver": {
-        node: true,
-        typescript: true,
-      },
     },
   },
 
@@ -53,9 +42,6 @@ export default defineConfig(
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "@typescript-eslint/prefer-as-const": "error",
-      // Import Rules
-      "import/no-duplicates": "error",
-      "import/order": "error",
       // Code Quality
       "no-console": ["warn", { allow: ["warn", "error"] }],
       "no-duplicate-imports": "error",

@@ -54,13 +54,15 @@
     "@schema-ts/core": "workspace:*"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^6.0.2",
-    "eslint-plugin-vue": "^10.6.2",
+    "@vitejs/plugin-vue": "^6.0.9",
+    "@vue/language-core": "^3.3.11",
+    "eslint-plugin-vue": "^10.11.0",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
-    "vite": "^7.3.0",
-    "vite-plugin-dts": "^4.5.4",
-    "vitest": "^4.0.15",
-    "vue": "^3.5.25"
+    "vite": "^8.3.0",
+    "vite-plugin-dts": "^5.1.0",
+    "vitest": "^5.0.0",
+    "vue": "^3.5.42",
+    "vue-eslint-parser": "^10.4.1"
   }
 }

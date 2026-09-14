@@ -1,4 +1,3 @@
-import pluginReact from "eslint-plugin-react";
 import pluginReactHooks from "eslint-plugin-react-hooks";
 import pluginReactRefresh from "eslint-plugin-react-refresh";
 import pluginUnusedImports from "eslint-plugin-unused-imports";
@@ -12,15 +11,6 @@ export default defineConfig(
   {
     ignores: ["dist", "node_modules", "coverage"],
   },
-  {
-    settings: {
-      react: {
-        version: "detect",
-      },
-    },
-  },
-  pluginReact.configs.flat.recommended,
-  pluginReact.configs.flat["jsx-runtime"],
   pluginReactHooks.configs.flat.recommended,
   pluginReactRefresh.configs.recommended,
   {
