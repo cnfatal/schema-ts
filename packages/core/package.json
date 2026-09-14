@@ -1,6 +1,6 @@
 {
   "name": "@schema-ts/core",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Core schema validation library",
   "author": "cnfatal",
   "license": "MIT",

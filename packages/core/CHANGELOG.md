@@ -1,5 +1,15 @@
 # @schema-ts/core
 
+## 0.2.1
+
+### Patch Changes
+
+- 5dcef3c: Evaluate `allOf`/`if`/`anyOf`/`oneOf` against a value that carries the defaults
+  the runtime materializes (projected as each applicator merges). A discriminator
+  declared with a default but absent from the value (for example
+  `runMode: { default: "quick" }`) previously made `not anyOf` conditions that
+  `require` it vacuously true, rendering expert-only branches on first render.
+
 ## 0.2.0
 
 ### Minor Changes
