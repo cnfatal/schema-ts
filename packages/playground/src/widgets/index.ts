@@ -17,7 +17,7 @@ export * from "./ArrayWidget";
 export * from "./ObjectWidget";
 export * from "./UnknownWidget";
 
-export const muiWidgetRegistry: BuiltinWidgetsRegistry = {
+export const widgetRegistry: BuiltinWidgetsRegistry = {
   text: DefaultTextWidget,
   number: DefaultNumberWidget,
   integer: DefaultIntegerWidget,

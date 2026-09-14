@@ -1,6 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
+ * Debounce any callback. Always calls the latest callback and cancels the
+ * pending call on unmount. Use for continuous inputs (text, number, slider)
+ * instead of delaying updates in the runtime.
+ */
+export function useDebouncedCallback<A extends unknown[]>(
+  callback: (...args: A) => void,
+  delay = 300,
+): (...args: A) => void {
+  const callbackRef = useRef(callback);
+  callbackRef.current = callback;
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  return useCallback(
+    (...args: A) => {
+      clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => callbackRef.current(...args), delay);
+    },
+    [delay],
+  );
+}
+
+/**
  * A hook that provides debounced value management for controlled inputs.
  *
  * @param externalValue - The controlled value from props

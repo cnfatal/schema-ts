@@ -10,6 +10,8 @@ export function resolveEffectiveSchema(
   instanceLocation: string,
   // should validate the value against the effective schema
   validate: boolean = false,
+  // root instance, available to custom validators (cross-field rules)
+  rootValue?: unknown,
 ): {
   effectiveSchema: Schema;
   type: SchemaType;
@@ -35,7 +37,7 @@ export function resolveEffectiveSchema(
           value,
           `${keywordLocation}/then`,
           instanceLocation,
-          validate,
+          false,
         );
         effective = mergeSchema(
           effective,
@@ -51,7 +53,7 @@ export function resolveEffectiveSchema(
           value,
           `${keywordLocation}/else`,
           instanceLocation,
-          validate,
+          false,
         );
         effective = mergeSchema(
           effective,
@@ -75,7 +77,7 @@ export function resolveEffectiveSchema(
         value,
         subKeywordLocation,
         instanceLocation,
-        validate,
+        false,
       );
       effective = mergeSchema(
         effective,
@@ -105,7 +107,7 @@ export function resolveEffectiveSchema(
           value,
           subKeywordLocation,
           instanceLocation,
-          validate,
+          false,
         );
         effective = mergeSchema(
           effective,
@@ -150,7 +152,7 @@ export function resolveEffectiveSchema(
   }
 
   // type - determine the effective type for rendering purposes
-  let type: SchemaType = "unknown";
+  let type: SchemaType;
   if (effective.type) {
     const allowedTypes = Array.isArray(effective.type)
       ? effective.type
@@ -183,7 +185,7 @@ export function resolveEffectiveSchema(
     value,
     keywordLocation,
     instanceLocation,
-    { shallow: true },
+    { shallow: true, rootValue },
   );
 
   return {

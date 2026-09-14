@@ -86,6 +86,33 @@ export function getDefaultValue(
   }
 }
 
+/**
+ * The missing-property defaults the runtime materializes into an object value.
+ * Returned as `[key, defaultValue]` entries. Shared by `applyDefaults`
+ * (materialize into state) and `projectDefaults` (project a read-only copy) so
+ * both agree on which properties receive a value and what that value is.
+ */
+function missingPropertyDefaults(
+  schema: Schema,
+  isMissing: (key: string) => boolean,
+): Array<[string, unknown]> {
+  const result: Array<[string, unknown]> = [];
+  for (const [key, subschema] of Object.entries(schema.properties || {})) {
+    if (!isMissing(key)) continue;
+    const required = schema.required?.includes(key) ?? false;
+    // A property is materialized when it is required or declares a default.
+    // Compare with === undefined (not truthiness) so falsy defaults such as
+    // false, 0 and "" are applied.
+    if (!required && subschema.default === undefined) continue;
+    const value = getDefaultValue(subschema, required);
+    // A required property whose type cannot be inferred has no value to apply;
+    // leave the key absent instead of storing undefined.
+    if (value === undefined) continue;
+    result.push([key, value]);
+  }
+  return result;
+}
+
 export function applyDefaults(
   type: string,
   value: unknown,
@@ -111,17 +138,12 @@ export function applyDefaults(
       return [value, false];
     }
     const obj = value as Record<string, unknown>;
-    for (const [key, subschema] of Object.entries(schema.properties || {})) {
-      if (obj[key] !== undefined) continue;
-      if (schema.required?.includes(key) || subschema.default) {
-        const defaultValue = getDefaultValue(subschema, required);
-        // when defaultValue is undefined, we remove the key to treat it as missing
-        if (defaultValue == undefined) {
-          delete obj[key];
-        }
-        obj[key] = defaultValue;
-        changed = true;
-      }
+    for (const [key, defaultValue] of missingPropertyDefaults(
+      schema,
+      (key) => obj[key] === undefined,
+    )) {
+      obj[key] = defaultValue;
+      changed = true;
     }
     return [obj, changed];
   }
@@ -133,10 +155,105 @@ export function applyDefaults(
     const arr = value as unknown[];
     schema.prefixItems?.forEach((subschema, index) => {
       if (arr[index] !== undefined) return;
-      arr[index] = getDefaultValue(subschema, true);
+      const defaultValue = getDefaultValue(subschema, true);
+      if (defaultValue === undefined) return;
+      arr[index] = defaultValue;
       changed = true;
     });
     return [arr, changed];
   }
   return [value, false];
+}
+
+/**
+ * Build a copy of `value` with the defaults the runtime would materialize,
+ * without mutating the input or the runtime state.
+ *
+ * `default` is a JSON Schema annotation and does not affect validation, but this
+ * runtime materializes defaults while building form nodes. Conditional schemas
+ * (`if`/`then`/`else`) must therefore be evaluated against the value the form
+ * displays; otherwise a discriminator declared with a default (e.g.
+ * `enabled: { default: false }`) is seen as absent and vacuously satisfies
+ * `then`. This mirrors `applyDefaults`, so a branch is never selected based on
+ * a default that would not actually be stored.
+ *
+ * @param type - Effective schema type for `value`
+ * @param value - Current instance value (never mutated)
+ * @param schema - Schema providing defaults
+ * @param required - Whether this node is required by its parent
+ * @returns A projected copy, or the original value when nothing changes
+ */
+export function projectDefaults(
+  type: string,
+  value: unknown,
+  schema: Schema,
+  required: boolean = false,
+): unknown {
+  if (value === undefined) {
+    if (!required) return value;
+    const defaultValue = getDefaultValue(schema, required);
+    if (defaultValue === null || typeof defaultValue !== "object") {
+      return defaultValue;
+    }
+    // Project the materialized container so optional/`default` properties and
+    // nested defaults are included, exactly as `applyDefaults` would store.
+    return projectDefaults(type, defaultValue, schema, required);
+  }
+
+  if (type === "object") {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return value;
+    }
+    const source = value as Record<string, unknown>;
+    // Same missing-property rule the runtime materializes.
+    const defaults = new Map(
+      missingPropertyDefaults(schema, (key) => source[key] === undefined),
+    );
+    let copy: Record<string, unknown> | undefined;
+    for (const [key, subschema] of Object.entries(schema.properties || {})) {
+      const current = source[key];
+      const isRequired = schema.required?.includes(key) ?? false;
+      const next = current === undefined ? defaults.get(key) : current;
+      if (next === undefined) continue;
+      const [childType] = typeNullable(subschema);
+      const projected = projectDefaults(
+        childType ?? "",
+        next,
+        subschema,
+        isRequired,
+      );
+      const changed =
+        current === undefined ? next !== undefined : projected !== current;
+      if (changed) {
+        if (!copy) copy = { ...source };
+        copy[key] = projected;
+      }
+    }
+    return copy ?? value;
+  }
+
+  if (type === "array") {
+    if (!Array.isArray(value)) return value;
+    let copy: unknown[] | undefined;
+    value.forEach((item, index) => {
+      const itemSchema =
+        schema.prefixItems?.[index] ??
+        (typeof schema.items === "object" ? schema.items : undefined);
+      if (!itemSchema) return;
+      const [childType] = typeNullable(itemSchema);
+      const projected = projectDefaults(
+        childType ?? "",
+        item,
+        itemSchema,
+        true,
+      );
+      if (projected !== item) {
+        if (!copy) copy = value.slice();
+        copy[index] = projected;
+      }
+    });
+    return copy ?? value;
+  }
+
+  return value;
 }

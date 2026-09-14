@@ -1,15 +1,29 @@
 import { type UnknownWidgetProps } from "@schema-ts/react";
-import { Alert, FormField } from "../components";
+import { Field } from "@/components/field";
 
 export function DefaultUnknownWidget({
   schema,
   value,
   fieldRef,
+  label,
+  description,
+  instanceLocation,
 }: UnknownWidgetProps) {
   return (
-    <FormField ref={fieldRef} label="Unknown Widget">
-      <Alert severity="warning">Unsupported schema type: {schema.type}</Alert>
-      <pre>{JSON.stringify(value, null, 2)}</pre>
-    </FormField>
+    <div
+      ref={(element) => fieldRef?.(element)}
+      data-field-path={instanceLocation}
+    >
+      <Field
+        label={label ?? "Unknown field"}
+        description={
+          description ?? `Unsupported schema type: ${String(schema.type)}`
+        }
+      >
+        <pre className="overflow-auto rounded-md border bg-muted/30 p-3 font-mono text-xs">
+          {JSON.stringify(value, null, 2)}
+        </pre>
+      </Field>
+    </div>
   );
 }

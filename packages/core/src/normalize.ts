@@ -422,11 +422,29 @@ function normalizeNestedSchemas(
   }
 }
 
+export interface BetterNormalizerOptions {
+  /**
+   * When true, adds `minLength: 1` to required, non-nullable string properties
+   * that have no explicit `minLength`/`const`/`enum` and no empty default.
+   *
+   * `required` in JSON Schema only means "the key is present", so an empty
+   * string is valid. Forms almost always want a required text field to be
+   * non-empty, but this changes validation semantics, so it is opt-in.
+   */
+  nonEmptyRequiredStrings?: boolean;
+}
+
 /**
  * Enhanced normalizer that adds type inference, automatic required field identification,
  * and support for OpenAPI/Kubernetes extension properties on top of base draft transformations.
  */
 export class BetterNormalizer implements Normalizer {
+  private options: BetterNormalizerOptions;
+
+  constructor(options: BetterNormalizerOptions = {}) {
+    this.options = options;
+  }
+
   /**
    * Performs the normalization process:
    * 1. Base draft normalization (DraftNormalizer)
@@ -449,7 +467,11 @@ export class BetterNormalizer implements Normalizer {
     schema.oneOf?.forEach((s) => this.defaultSchema(s));
     schema.allOf?.forEach((s) => this.defaultSchema(s));
 
-    this.defaultSchemaMap(schema.properties, forceRequired);
+    this.defaultSchemaMap(
+      schema.properties,
+      forceRequired,
+      forceRequired ? undefined : schema.required,
+    );
     this.defaultSchemaMap(schema.patternProperties, forceRequired);
     this.defaultSchema(schema.additionalProperties, forceRequired);
     this.defaultSchema(schema.propertyNames);
@@ -471,12 +493,17 @@ export class BetterNormalizer implements Normalizer {
   private defaultSchemaMap(
     kvs?: Record<string, Schema>,
     forceRequired = false,
+    requiredKeys?: string[],
   ) {
     if (!kvs) {
       return;
     }
-    Object.entries(kvs).forEach(([_, value]) => {
-      this.defaultSchema(value, forceRequired);
+    Object.entries(kvs).forEach(([key, value]) => {
+      this.defaultSchema(
+        value,
+        forceRequired,
+        requiredKeys ? requiredKeys.includes(key) : forceRequired,
+      );
     });
   }
 
@@ -488,7 +515,11 @@ export class BetterNormalizer implements Normalizer {
    * - Handling `required` fields from OpenAPI `discriminator`
    * - Handling `x-required` and `x-kubernetes-patch-merge-key`
    */
-  private defaultSchema(schema?: Schema | boolean, forceRequired = false) {
+  private defaultSchema(
+    schema?: Schema | boolean,
+    forceRequired = false,
+    isRequired = forceRequired,
+  ) {
     if (!schema || typeof schema === "boolean") {
       return;
     }
@@ -563,7 +594,26 @@ export class BetterNormalizer implements Normalizer {
         items.required.push(mergeKey);
       }
     }
+
+    if (this.options.nonEmptyRequiredStrings && isRequired) {
+      this.requireNonEmptyString(schema);
+    }
+
     this.default(schema, forceRequired);
+  }
+
+  /** Add `minLength: 1` to a required, non-nullable string without constraints. */
+  private requireNonEmptyString(schema: Schema): void {
+    const types = Array.isArray(schema.type)
+      ? schema.type
+      : schema.type
+        ? [schema.type]
+        : [];
+    if (!types.includes("string") || types.includes("null")) return;
+    if (schema.minLength !== undefined) return;
+    if (schema.const !== undefined || Array.isArray(schema.enum)) return;
+    if (schema.default === "") return;
+    schema.minLength = 1;
   }
 }
 

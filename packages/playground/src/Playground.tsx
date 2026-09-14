@@ -1,41 +1,25 @@
-import { useState, useMemo, useEffect, useRef } from "react";
-import type { Schema } from "@schema-ts/core";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BetterNormalizer, type Schema } from "@schema-ts/core";
+import { createSimpleFieldRenderer } from "@schema-ts/react";
+import { dump, load } from "js-yaml";
+import { widgetRegistry } from "./widgets";
 import {
-  createSimpleFieldRenderer,
-  Form,
-  type FormHandle,
-} from "@schema-ts/react";
-import { load, dump } from "js-yaml";
-import { Editor } from "./Editor";
-import { muiWidgetRegistry } from "./widgets";
-import { XEnumExtension } from "./extensions/XEnumExtension";
+  createXResourceEnumExtension,
+  createXValidateValidator,
+  XEnumExtension,
+} from "@/extensions";
+import { EditorPane } from "@/components/editor-pane";
+import { LogPanel, type LogEntry } from "@/components/log-panel";
 import {
-  // Core
-  ThemeProvider,
-  // Layout
-  Box,
-  Flex,
-  Center,
-  Grid,
-  PanelContainer,
-  PanelSection,
-  EditorContainer,
-  // Navigation
-  AppBar,
-  Toolbar,
-  // Typography
-  Text,
-  Heading,
-  SectionHeader,
-  // Form
-  Button,
-  Select,
-  SelectOption,
-  // Feedback
-  Alert,
-  // Visual
-  DecoratedDivider,
-} from "./components";
+  PreviewPane,
+  type PreviewPaneHandle,
+  type PreviewValidity,
+} from "@/components/preview-pane";
+import { StatusBar } from "@/components/status-bar";
+import { TopBar } from "@/components/top-bar";
+import { WorkbenchLayout } from "@/components/workbench-layout";
+import { scrollToFieldPath } from "@/lib/field-navigation";
+import { mockResourceLoader } from "@/lib/mock-resources";
 
 export type Example = {
   name: string;
@@ -43,30 +27,68 @@ export type Example = {
   value: unknown;
 };
 
+function logTimestamp(): string {
+  const now = new Date();
+  const pad = (value: number, width = 2) => String(value).padStart(width, "0");
+  return `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}.${pad(now.getMilliseconds(), 3)}`;
+}
+
 export const Playground = ({ examples }: { examples?: Example[] }) => {
-  const formRef = useRef<FormHandle>(null);
+  const previewRef = useRef<PreviewPaneHandle>(null);
   const [schemaStr, setSchemaStr] = useState("");
   const [valueStr, setValueStr] = useState("");
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [previewWidth, setPreviewWidth] = useState(0);
+  const [valid, setValid] = useState(true);
+  const [errorCount, setErrorCount] = useState(0);
+  const [selectedExampleName, setSelectedExampleName] = useState(() => {
+    // ?example=Name deep-links to an example (also handy for screenshots).
+    const fromUrl =
+      typeof window === "undefined"
+        ? null
+        : new URLSearchParams(window.location.search).get("example");
+    if (fromUrl && examples?.some((example) => example.name === fromUrl)) {
+      return fromUrl;
+    }
+    return examples ? examples[0].name : undefined;
+  });
+  const logIdRef = useRef(0);
+  const lastLoadedRef = useRef<string | null>(null);
 
-  const [selectedExampleName, setSelectedExampleName] = useState(
-    examples ? examples[0].name : undefined,
+  const pushLog = useCallback(
+    (level: LogEntry["level"], message: string, path?: string) => {
+      setLogs((previous) =>
+        [
+          ...previous,
+          {
+            id: logIdRef.current++,
+            time: logTimestamp(),
+            level,
+            message,
+            path,
+          },
+        ].slice(-500),
+      );
+    },
+    [],
   );
 
   useEffect(() => {
-    if (examples && selectedExampleName) {
-      const example = examples.find((ex) => ex.name === selectedExampleName);
-      if (example) {
-        setSchemaStr(dump(example.schema));
-        setValueStr(dump(example.value));
-      }
+    if (!examples || !selectedExampleName) return;
+    const example = examples.find((item) => item.name === selectedExampleName);
+    if (!example) return;
+    setSchemaStr(dump(example.schema));
+    setValueStr(dump(example.value));
+    // Guard against React StrictMode double-invoking effects (dev only).
+    if (lastLoadedRef.current !== example.name) {
+      lastLoadedRef.current = example.name;
+      pushLog("info", `Loaded example: ${example.name}`);
     }
-  }, [examples, selectedExampleName]);
+  }, [examples, selectedExampleName, pushLog]);
 
-  // Parse Schema
   const { schema, schemaError } = useMemo(() => {
     try {
-      const parsed = load(schemaStr);
-      return { schema: parsed as Schema, schemaError: null };
+      return { schema: load(schemaStr) as Schema, schemaError: null };
     } catch (error) {
       return {
         schema: null,
@@ -75,11 +97,9 @@ export const Playground = ({ examples }: { examples?: Example[] }) => {
     }
   }, [schemaStr]);
 
-  // Parse Initial Value
   const { parsedValue, valueError } = useMemo(() => {
     try {
-      const parsed = load(valueStr);
-      return { parsedValue: parsed, valueError: null };
+      return { parsedValue: load(valueStr), valueError: null };
     } catch (error) {
       return {
         parsedValue: {},
@@ -88,154 +108,127 @@ export const Playground = ({ examples }: { examples?: Example[] }) => {
     }
   }, [valueStr]);
 
+  useEffect(() => {
+    if (schemaError) pushLog("error", `Schema parse error: ${schemaError}`);
+  }, [schemaError, pushLog]);
+
+  useEffect(() => {
+    if (valueError) pushLog("error", `Values parse error: ${valueError}`);
+  }, [valueError, pushLog]);
+
   const renderer = useMemo(
-    () => createSimpleFieldRenderer(muiWidgetRegistry, [XEnumExtension]),
+    () =>
+      createSimpleFieldRenderer(widgetRegistry, [
+        createXResourceEnumExtension({ load: mockResourceLoader }),
+        XEnumExtension,
+      ]),
     [],
   );
+  const runtimeOptions = useMemo(
+    () => ({
+      schemaNormalizer: new BetterNormalizer({
+        nonEmptyRequiredStrings: true,
+      }),
+    }),
+    [],
+  );
+  const validator = useMemo(() => createXValidateValidator(), []);
 
-  const handleFormChange = (newValue: unknown) => {
-    setValueStr(dump(newValue));
-  };
+  const handleChange = useCallback((next: unknown) => {
+    setValueStr(dump(next));
+  }, []);
 
-  const handleSubmit = () => {
-    if (formRef.current) {
-      const isValid = formRef.current.validate();
-      if (!isValid) {
-        formRef.current.scrollToFirstError();
-      } else {
-        window.alert("Form submitted successfully!");
-      }
-    }
-  };
+  const handleValidationError = useCallback(
+    ({ path, message }: { path: string; message: string }) => {
+      pushLog("error", `Validation ${path || "/"}  ${message}`, path);
+    },
+    [pushLog],
+  );
+
+  const handleValidityChange = useCallback((validity: PreviewValidity) => {
+    setValid(validity.valid);
+    setErrorCount(validity.errorCount);
+  }, []);
+
+  const handleWidthChange = useCallback((width: number) => {
+    setPreviewWidth(width);
+  }, []);
+
+  const handleSubmitResult = useCallback(
+    (validity: PreviewValidity) => {
+      setValid(validity.valid);
+      setErrorCount(validity.errorCount);
+      pushLog(
+        validity.valid ? "success" : "error",
+        validity.valid
+          ? "Submit: form is valid"
+          : `Submit: validation failed (${validity.errorCount} error${
+              validity.errorCount === 1 ? "" : "s"
+            })`,
+      );
+    },
+    [pushLog],
+  );
 
   return (
-    <ThemeProvider>
-      <Flex direction="column" sx={{ height: "100vh" }}>
-        <AppBar>
-          <Toolbar>
-            <Flex align="center" sx={{ flexGrow: 1 }}>
-              <Heading
-                level={6}
-                component="div"
-                sx={{ color: "primary.main", fontWeight: 800 }}
-              >
-                Schema-TS{" "}
-                <Box
-                  component="span"
-                  sx={{
-                    fontWeight: 500,
-                    color: "text.secondary",
-                    opacity: 0.8,
-                  }}
-                >
-                  Playground
-                </Box>
-              </Heading>
-            </Flex>
-            <Flex align="center" gap={3}>
-              <Select
-                id="example-select"
-                value={selectedExampleName ?? ""}
-                onChange={setSelectedExampleName}
-                size="small"
-                borderless
-                formControlProps={{ size: "small", sx: { minWidth: 200 } }}
-              >
-                {examples?.map((example) => (
-                  <SelectOption key={example.name} value={example.name}>
-                    {example.name}
-                  </SelectOption>
-                ))}
-              </Select>
-              <Button
-                variant="soft"
-                size="small"
-                onClick={() => {
-                  if (examples) {
-                    setSelectedExampleName(examples[0].name);
-                  }
-                }}
-              >
-                Reset Example
-              </Button>
-            </Flex>
-          </Toolbar>
-        </AppBar>
-
-        <Box sx={{ flexGrow: 1, overflow: "hidden", p: { xs: 2, md: 3 } }}>
-          <Grid container spacing={3} sx={{ height: "100%" }}>
-            {/* Left Panel: Inputs (Split Top/Bottom) */}
-            <Grid
-              size={{ xs: 12, md: 5 }}
-              sx={{ height: "100%", display: "flex", flexDirection: "column" }}
-            >
-              <PanelContainer>
-                <PanelSection>
-                  <SectionHeader title="JSON Schema" />
-                  <EditorContainer>
-                    <Editor value={schemaStr} onChange={setSchemaStr} />
-                  </EditorContainer>
-                  {schemaError && (
-                    <Alert severity="error" sx={{ m: 2, mt: 0 }}>
-                      {schemaError}
-                    </Alert>
-                  )}
-                </PanelSection>
-
-                <DecoratedDivider />
-
-                <PanelSection>
-                  <SectionHeader title="Values" />
-                  <EditorContainer>
-                    <Editor value={valueStr} onChange={setValueStr} />
-                  </EditorContainer>
-                  {valueError && (
-                    <Alert severity="error" sx={{ m: 2, mt: 0 }}>
-                      {valueError}
-                    </Alert>
-                  )}
-                </PanelSection>
-              </PanelContainer>
-            </Grid>
-
-            {/* Right Panel: Output */}
-            <Grid
-              size={{ xs: 12, md: 7 }}
-              sx={{ height: "100%", display: "flex", flexDirection: "column" }}
-            >
-              <PanelContainer>
-                <SectionHeader
-                  title="Real-time UI Preview"
-                  actions={
-                    <Button size="small" onClick={handleSubmit}>
-                      Submit
-                    </Button>
-                  }
-                />
-                <Box
-                  sx={{ flexGrow: 1, overflow: "auto", p: { xs: 2, md: 4 } }}
-                >
-                  {schema ? (
-                    <Form
-                      ref={formRef}
-                      schema={schema}
-                      value={parsedValue}
-                      onChange={handleFormChange}
-                      render={renderer.render}
-                    />
-                  ) : (
-                    <Center sx={{ height: "100%" }}>
-                      <Text color="text.secondary">
-                        Provide a valid JSON Schema to see the UI
-                      </Text>
-                    </Center>
-                  )}
-                </Box>
-              </PanelContainer>
-            </Grid>
-          </Grid>
-        </Box>
-      </Flex>
-    </ThemeProvider>
+    <WorkbenchLayout
+      topBar={
+        <TopBar
+          examples={examples}
+          selectedExample={selectedExampleName}
+          onSelectExample={setSelectedExampleName}
+          onReset={() => examples && setSelectedExampleName(examples[0].name)}
+        />
+      }
+      schema={
+        <EditorPane
+          title="JSON Schema"
+          value={schemaStr}
+          onChange={setSchemaStr}
+          error={schemaError}
+        />
+      }
+      values={
+        <EditorPane
+          title="Values"
+          value={valueStr}
+          onChange={setValueStr}
+          error={valueError}
+        />
+      }
+      preview={
+        <PreviewPane
+          ref={previewRef}
+          schema={schema}
+          value={parsedValue}
+          render={renderer.render}
+          runtimeOptions={runtimeOptions}
+          validator={validator}
+          formKey={selectedExampleName ?? "default"}
+          onChange={handleChange}
+          onValidationError={handleValidationError}
+          onSubmit={handleSubmitResult}
+          onValidityChange={handleValidityChange}
+          onWidthChange={handleWidthChange}
+        />
+      }
+      log={
+        <LogPanel
+          logs={logs}
+          onClear={() => setLogs([])}
+          onJump={scrollToFieldPath}
+        />
+      }
+      statusBar={
+        <StatusBar
+          exampleName={selectedExampleName}
+          valid={valid}
+          errorCount={errorCount}
+          previewWidth={previewWidth}
+          logCount={logs.length}
+          onGoToFirstError={() => previewRef.current?.scrollToFirstError()}
+        />
+      }
+    />
   );
 };

@@ -5,10 +5,7 @@
  * Supported JSON Schema draft versions.
  */
 export type SchemaDraft =
-  | "draft-04"
-  | "draft-07"
-  | "draft-2019-09"
-  | "draft-2020-12";
+  "draft-04" | "draft-07" | "draft-2019-09" | "draft-2020-12";
 
 /**
  * Standard $schema URI patterns for each draft version.

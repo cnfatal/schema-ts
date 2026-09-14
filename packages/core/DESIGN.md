@@ -115,6 +115,29 @@ Default values are applied during Phase 1 of node building:
 
 This ensures all defaults are in place before Phase 2 validation runs.
 
+### Conditional Evaluation and Defaults
+
+`default` is a JSON Schema annotation and does not affect validation. Because the
+runtime materializes defaults during Phase 1, `if`/`then`/`else` conditions are
+evaluated against a **default-projected copy** of the value rather than the raw
+submission. This keeps a discriminator that declares a default (for example
+`enabled: { default: false }`) consistent with the value the form displays: the
+`else` branch is selected on first render instead of leaking `then` fields until
+the switch is toggled.
+
+The projection mirrors the default rules above and never mutates stored state, so
+JSON Schema semantics are preserved for genuinely absent values: a condition that
+only lists `properties` (without `required`) still matches when the property is
+absent. To treat a missing discriminator as "condition not met", authors should
+either write `required` inside `if` or opt into `BetterNormalizer`:
+
+```ts
+new SchemaRuntime(validator, schema, value, { normalizer: "better" });
+```
+
+The default `"draft"` normalizer never rewrites conditions, keeping the runtime
+faithful to JSON Schema.
+
 ## State Consistency
 
 The value states after any operation must match the value initialization logic.

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Schema } from "./type";
-import { getDefaultValue, applyDefaults } from "./default";
+import { getDefaultValue, applyDefaults, projectDefaults } from "./default";
 
 describe("getDefaultValue", () => {
   it("returns const value if defined", () => {
@@ -237,5 +237,123 @@ describe("applyDefaults", () => {
     };
     // applyDefaults is shallow for existing items
     expect(applyDefaults("array", [{}], schema)).toEqual([[{}], false]);
+  });
+
+  it("fills falsy default values (false, 0, empty string)", () => {
+    const schema: Schema = {
+      type: "object",
+      properties: {
+        flag: { type: "boolean", default: false },
+        count: { type: "integer", default: 0 },
+        label: { type: "string", default: "" },
+        title: { type: "string", default: "x" },
+      },
+    };
+    expect(applyDefaults("object", {}, schema, false)).toEqual([
+      { flag: false, count: 0, label: "", title: "x" },
+      true,
+    ]);
+  });
+
+  it("fills required children with zero values even when the parent is optional", () => {
+    const schema: Schema = {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        flag: { type: "boolean" },
+      },
+      required: ["name", "flag"],
+    };
+    expect(applyDefaults("object", {}, schema, false)).toEqual([
+      { name: "", flag: false },
+      true,
+    ]);
+  });
+});
+
+describe("projectDefaults", () => {
+  it("does not mutate the input value", () => {
+    const schema: Schema = {
+      type: "object",
+      properties: { flag: { type: "boolean", default: false } },
+    };
+    const value: Record<string, unknown> = {};
+    const projected = projectDefaults("object", value, schema, false) as Record<
+      string,
+      unknown
+    >;
+    expect(projected).toEqual({ flag: false });
+    expect(value).toEqual({});
+    expect(projected).not.toBe(value);
+  });
+
+  it("omits optional properties without a default", () => {
+    const schema: Schema = {
+      type: "object",
+      properties: {
+        a: { type: "string" },
+        b: { type: "string", default: "b" },
+      },
+    };
+    expect(projectDefaults("object", {}, schema, false)).toEqual({ b: "b" });
+  });
+
+  it("recursively projects required nested object defaults", () => {
+    const schema: Schema = {
+      type: "object",
+      properties: {
+        nested: {
+          type: "object",
+          properties: { flag: { type: "boolean", default: false } },
+        },
+      },
+      required: ["nested"],
+    };
+    expect(projectDefaults("object", {}, schema, false)).toEqual({
+      nested: { flag: false },
+    });
+  });
+
+  it("projects optional defaults when a required container is absent", () => {
+    const schema: Schema = {
+      type: "object",
+      properties: {
+        a: { type: "string" },
+        b: { type: "string", default: "b" },
+      },
+      required: ["a"],
+    };
+    expect(projectDefaults("object", undefined, schema, true)).toEqual({
+      a: "",
+      b: "b",
+    });
+  });
+
+  it("returns the original value when nothing changes", () => {
+    const schema: Schema = {
+      type: "object",
+      properties: { a: { type: "string" } },
+    };
+    const value = { a: "x" };
+    expect(projectDefaults("object", value, schema, false)).toBe(value);
+  });
+
+  it("projects defaults into existing array items without mutating them", () => {
+    const schema: Schema = {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { flag: { type: "boolean", default: false } },
+      },
+    };
+    const value = [{}];
+    const projected = projectDefaults(
+      "array",
+      value,
+      schema,
+      false,
+    ) as unknown[];
+    expect(projected[0]).toEqual({ flag: false });
+    expect(value[0]).toEqual({});
   });
 });

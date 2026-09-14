@@ -56,6 +56,12 @@ export interface FormHandle {
    * @returns true if an error field was found and scrolled to, false otherwise
    */
   scrollToFirstError(options?: ScrollIntoViewOptions): boolean;
+
+  /**
+   * Access the underlying SchemaRuntime, e.g. to subscribe to change events or
+   * inspect node errors.
+   */
+  getRuntime(): SchemaRuntime;
 }
 
 /**
@@ -177,6 +183,11 @@ export type FormProps = {
    * @param options - Scroll behavior options passed from scrollToFirstError
    */
   onScrollToError?: ScrollToErrorHandler;
+  /**
+   * Called for every runtime change event (value, schema, error).
+   * Useful for logging and validation-timing demos.
+   */
+  onEvent?: (event: SchemaChangeEvent) => void;
 };
 
 export const Form = forwardRef<FormHandle, FormProps>(function Form(
@@ -193,6 +204,7 @@ export const Form = forwardRef<FormHandle, FormProps>(function Form(
     mode,
     sharedStateInitialValues,
     onScrollToError,
+    onEvent,
   } = props;
 
   // Capture initial value only once at mount
@@ -254,6 +266,9 @@ export const Form = forwardRef<FormHandle, FormProps>(function Form(
       getValue: (): unknown => {
         return runtime.getValue("");
       },
+      getRuntime: (): SchemaRuntime => {
+        return runtime;
+      },
       scrollToFirstError: (
         options: ScrollIntoViewOptions = {
           behavior: "smooth",
@@ -276,8 +291,16 @@ export const Form = forwardRef<FormHandle, FormProps>(function Form(
     [runtime, domRegistry, onScrollToError],
   );
 
-  // Sync external value to runtime (only when value actually differs)
+  // Sync external value to runtime (only when value actually differs).
+  // The first render is skipped: the runtime was constructed with the initial
+  // value, and calling setValue("") would mark every field as touched and
+  // surface validation errors before the user has interacted.
+  const didMountRef = useRef(false);
   useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
     const currentValue = runtime.getValue("");
     if (!deepEqual(currentValue, value)) {
       runtime.setValue("", value);
@@ -294,6 +317,13 @@ export const Form = forwardRef<FormHandle, FormProps>(function Form(
     }
     return undefined;
   }, [runtime, onChange]);
+
+  useEffect(() => {
+    if (!onEvent) {
+      return undefined;
+    }
+    return runtime.subscribeAll(onEvent);
+  }, [runtime, onEvent]);
 
   return (
     <FormContext.Provider value={formContextValue}>

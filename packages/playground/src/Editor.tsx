@@ -3,7 +3,8 @@ import { yaml } from "@codemirror/lang-yaml";
 import { json } from "@codemirror/lang-json";
 import { indentWithTab } from "@codemirror/commands";
 import { keymap } from "@codemirror/view";
-import styled from "@emotion/styled";
+import { vscodeDark, vscodeLight } from "@uiw/codemirror-theme-vscode";
+import { useTheme } from "@/components/theme";
 
 interface EditorProps {
   value: string;
@@ -11,33 +12,9 @@ interface EditorProps {
   lang?: "yaml" | "json";
 }
 
-const EditorWrapper = styled.div`
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  border: 1px solid #e0e0e0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-
-  .cm-theme-light,
-  .cm-theme-dark {
-    height: 100%;
-  }
-
-  .cm-editor {
-    height: 100% !important;
-  }
-
-  .cm-scroller {
-    font-family: "Menlo", "Monaco", "Courier New", monospace;
-    font-size: 14px;
-    overflow: auto !important;
-  }
-`;
-
+/** CodeMirror editor using the official VS Code color themes. */
 export const Editor = ({ value, onChange, lang = "yaml" }: EditorProps) => {
+  const { resolved } = useTheme();
   const extensions = [keymap.of([indentWithTab])];
   if (lang === "yaml") {
     extensions.push(yaml());
@@ -46,16 +23,11 @@ export const Editor = ({ value, onChange, lang = "yaml" }: EditorProps) => {
   }
 
   return (
-    <EditorWrapper>
+    <div className={cnEditor}>
       <CodeMirror
         value={value}
         height="100%"
-        style={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          minHeight: 0,
-        }}
+        theme={resolved === "dark" ? vscodeDark : vscodeLight}
         extensions={extensions}
         onChange={(val) => onChange(val)}
         basicSetup={{
@@ -64,6 +36,14 @@ export const Editor = ({ value, onChange, lang = "yaml" }: EditorProps) => {
           highlightActiveLine: true,
         }}
       />
-    </EditorWrapper>
+    </div>
   );
 };
+
+const cnEditor = [
+  "h-full min-h-0 overflow-hidden",
+  "[&_.cm-theme]:h-full",
+  "[&_.cm-editor]:h-full",
+  "[&_.cm-scroller]:overflow-auto",
+  "[&_.cm-scroller]:font-mono [&_.cm-scroller]:text-[13px]",
+].join(" ");

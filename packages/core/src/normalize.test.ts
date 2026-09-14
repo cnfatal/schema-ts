@@ -488,6 +488,35 @@ describe("BetterNormalizer", () => {
       const normalized = normalizer.normalize(schema);
       expect(normalized.required).toBe(undefined);
     });
+
+    it("does not add minLength to required strings by default", () => {
+      const schema: Schema = {
+        type: "object",
+        properties: { user: { type: "string" } },
+        required: ["user"],
+      };
+      const normalized = normalizer.normalize(schema);
+      expect(normalized.properties?.user.minLength).toBeUndefined();
+    });
+
+    it("adds minLength 1 to required strings when nonEmptyRequiredStrings is on", () => {
+      const strict = new BetterNormalizer({ nonEmptyRequiredStrings: true });
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          user: { type: "string" },
+          note: { type: "string" },
+          nullable: { type: ["string", "null"] },
+          coded: { type: "string", pattern: "^x" },
+        },
+        required: ["user", "nullable", "coded"],
+      };
+      const normalized = strict.normalize(schema);
+      expect(normalized.properties?.user.minLength).toBe(1);
+      expect(normalized.properties?.coded.minLength).toBe(1);
+      expect(normalized.properties?.note.minLength).toBeUndefined();
+      expect(normalized.properties?.nullable.minLength).toBeUndefined();
+    });
   });
 
   describe("recursive normalization", () => {

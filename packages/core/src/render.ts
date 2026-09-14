@@ -12,8 +12,8 @@ import {
 } from "./util";
 import { resolveEffectiveSchema } from "./effective";
 import { dereferenceSchemaDeep, getSubSchema } from "./schema-util";
-import { applyDefaults, getDefaultValue } from "./default";
-import { DraftNormalizer, Normalizer } from "./normalize";
+import { applyDefaults, getDefaultValue, projectDefaults } from "./default";
+import { BetterNormalizer, DraftNormalizer, Normalizer } from "./normalize";
 import type { Validator } from "./validate";
 import { collectDependencies } from "./dependency";
 
@@ -71,6 +71,18 @@ export interface SchemaRuntimeOptions {
    * If specified, will use this normalizer instead of the default one.
    */
   schemaNormalizer?: Normalizer;
+
+  /**
+   * Select the built-in schema normalizer.
+   * - `"draft"` (default): draft conversion only, faithful to JSON Schema.
+   * - `"better"`: additionally run `BetterNormalizer`, which applies
+   *   UI-friendly heuristics such as treating properties referenced by `if`
+   *   as required. Use this when schema authors omit `required` inside
+   *   conditions.
+   *
+   * Ignored when a custom `schemaNormalizer` is supplied.
+   */
+  normalizer?: "draft" | "better";
 }
 
 export class SchemaRuntime {
@@ -118,7 +130,11 @@ export class SchemaRuntime {
       removeEmptyContainers: "auto",
       ...options,
     };
-    this.normalizer = options.schemaNormalizer || new DraftNormalizer();
+    this.normalizer =
+      options.schemaNormalizer ??
+      (options.normalizer === "better"
+        ? new BetterNormalizer()
+        : new DraftNormalizer());
     this.value = value;
     this.rootSchema = this.resolveSchema(schema);
     this.root = this.createEmptyNode("", "#");
@@ -686,6 +702,57 @@ export class SchemaRuntime {
   }
 
   /**
+   * Resolve a node effective schema (if/then/else, allOf, anyOf, oneOf).
+   *
+   * Conditions are evaluated against a default-projected copy of the value, so a
+   * discriminator declared with a default (for example enabled: { default: false })
+   * selects the same branch the form materializes. The projection mirrors
+   * applyDefaults and never mutates stored state, so genuinely absent values keep
+   * JSON Schema vacuous `properties` semantics.
+   */
+  private resolveEffectiveSchemaForNode(
+    node: FieldNode,
+    value: unknown,
+  ): { type: SchemaType; effectiveSchema: Schema } {
+    const { keywordLocation, instanceLocation, originalSchema } = node;
+    const resolved = resolveEffectiveSchema(
+      this.validator,
+      originalSchema,
+      value,
+      keywordLocation,
+      instanceLocation,
+      false,
+      this.value,
+    );
+
+    // Only `if` is projected: anyOf/oneOf branch selection is driven by full
+    // validation, where injecting defaults could destabilize the chosen branch.
+    if (!originalSchema.if) {
+      return resolved;
+    }
+
+    const projected = projectDefaults(
+      resolved.type,
+      value,
+      originalSchema,
+      node.required,
+    );
+    if (projected === value) {
+      return resolved;
+    }
+
+    return resolveEffectiveSchema(
+      this.validator,
+      originalSchema,
+      projected,
+      keywordLocation,
+      instanceLocation,
+      false,
+      this.value,
+    );
+  }
+
+  /**
    * Build/update a FieldNode using two-phase approach.
    * Phase 1: Build structure and apply defaults (recursive)
    * Phase 2: Validate all nodes (recursive)
@@ -701,23 +768,35 @@ export class SchemaRuntime {
     schema?: Schema,
     options: {
       updatedNodes?: Set<string>;
+      valueChanged?: Set<string>;
     } = {},
   ): void {
     // Track updated nodes to prevent duplicate updates
     const updatedNodes = options.updatedNodes || new Set<string>();
+    // Nodes whose value was rewritten by defaults need their effective schema
+    // re-resolved; all others can reuse the schema resolved in phase 1.
+    const valueChanged = options.valueChanged || new Set<string>();
 
     // Phase 1: Build structure and apply defaults for entire subtree
-    const changedNodes = this.buildNodeStructure(node, schema, updatedNodes);
+    const changedNodes = this.buildNodeStructure(
+      node,
+      schema,
+      updatedNodes,
+      valueChanged,
+    );
 
     // Phase 2: Validate all changed nodes after defaults are fully applied
-    this.validateNodes(changedNodes);
+    this.validateNodes(changedNodes, valueChanged);
 
     // Propagate updates to dependent nodes (outside the two-phase build)
     const { instanceLocation } = node;
     const dependentNodes = this.dependentsMap.get(instanceLocation);
     if (dependentNodes) {
       for (const dependentNode of dependentNodes) {
-        this.buildNode(dependentNode, undefined, { updatedNodes });
+        this.buildNode(dependentNode, undefined, {
+          updatedNodes,
+          valueChanged,
+        });
       }
     }
   }
@@ -731,8 +810,9 @@ export class SchemaRuntime {
     node: FieldNode,
     schema: Schema | undefined,
     updatedNodes: Set<string>,
+    valueChanged: Set<string>,
   ): FieldNode[] {
-    const { keywordLocation, instanceLocation } = node;
+    const { instanceLocation } = node;
     const value = this.getValue(instanceLocation);
 
     // Circular update protection
@@ -755,14 +835,12 @@ export class SchemaRuntime {
         this.updateNodeDependencies(node, schema);
       }
 
-      // Resolve effective schema WITHOUT validation
-      const { type, effectiveSchema } = resolveEffectiveSchema(
-        this.validator,
-        node.originalSchema,
+      // Resolve effective schema WITHOUT validation. Conditions are evaluated
+      // against a default-projected value so a discriminator declared with a
+      // default selects the same branch the form materializes.
+      const { type, effectiveSchema } = this.resolveEffectiveSchemaForNode(
+        node,
         value,
-        keywordLocation,
-        instanceLocation,
-        false,
       );
 
       // Detect if effective schema changed
@@ -792,10 +870,14 @@ export class SchemaRuntime {
 
       // Build children recursively - they will also apply their defaults
       const currentValue = this.getValue(instanceLocation);
+      if (!deepEqual(value, currentValue)) {
+        valueChanged.add(instanceLocation);
+      }
       const childChangedNodes = this.buildNodeChildrenStructure(
         node,
         currentValue,
         updatedNodes,
+        valueChanged,
       );
       changedNodes.push(...childChangedNodes);
 
@@ -818,6 +900,7 @@ export class SchemaRuntime {
     node: FieldNode,
     value: unknown,
     updatedNodes: Set<string>,
+    valueChanged: Set<string>,
   ): FieldNode[] {
     const { keywordLocation, instanceLocation } = node;
     const effectiveSchema = node.schema;
@@ -869,6 +952,7 @@ export class SchemaRuntime {
         childNode,
         childSchema,
         updatedNodes,
+        valueChanged,
       );
       changedNodes.push(...childChangedNodes);
       newChildren.push(childNode);
@@ -996,7 +1080,7 @@ export class SchemaRuntime {
    * Phase 2: Validate all nodes after structure is built and defaults applied.
    * This ensures validation sees the final values including all defaults.
    */
-  private validateNodes(nodes: FieldNode[]): void {
+  private validateNodes(nodes: FieldNode[], valueChanged: Set<string>): void {
     for (const node of nodes) {
       const { keywordLocation, instanceLocation } = node;
       const value = this.getValue(instanceLocation);
@@ -1006,15 +1090,31 @@ export class SchemaRuntime {
 
       let error: Output | undefined;
       if (shouldValidate) {
-        const validated = resolveEffectiveSchema(
-          this.validator,
-          node.originalSchema,
-          value,
-          keywordLocation,
-          instanceLocation,
-          true,
-        );
-        error = validated.error;
+        if (valueChanged.has(instanceLocation)) {
+          // Defaults rewrote the value, so the effective schema resolved in
+          // phase 1 may no longer apply (e.g. an if discriminator changed).
+          const validated = resolveEffectiveSchema(
+            this.validator,
+            node.originalSchema,
+            value,
+            keywordLocation,
+            instanceLocation,
+            true,
+            this.value,
+          );
+          error = validated.error;
+        } else {
+          // node.schema is the effective schema resolved in phase 1; validating
+          // it directly skips re-running if/allOf/anyOf/oneOf resolution.
+          const output = this.validator.validate(
+            node.schema,
+            value,
+            keywordLocation,
+            instanceLocation,
+            { shallow: true, rootValue: this.value },
+          );
+          error = output.valid ? undefined : output;
+        }
       }
 
       const errorChanged = !deepEqual(error, node.error);

@@ -56,6 +56,12 @@ export interface WidgetProps {
   // optional clear handler
   onClear?: () => void;
 
+  /**
+   * Called when the control loses focus. Wired to runtime.validate(path) so a
+   * field the user visited is validated even if its value did not change.
+   */
+  onBlur?: () => void;
+
   // render child field
   renderChild: RenderChild;
 
@@ -196,6 +202,7 @@ export class SimpleFieldRenderer {
       value,
       defaultValue: schema.default ?? schema.const,
       onChange,
+      onBlur: () => runtime.validate(instanceLocation),
       ...otherProps,
     };
 

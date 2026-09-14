@@ -10,20 +10,51 @@ import { normalizeSchema } from "./normalize";
 export interface ValidatorOptions {
   fastFail?: boolean;
   shallow?: boolean;
+  /**
+   * Root instance value. Threaded through so custom validators can resolve
+   * sibling values (e.g. cross-field rules like max > min).
+   */
+  rootValue?: unknown;
 }
+
+/** Context passed to a custom keyword validator. */
+export interface KeywordValidationContext {
+  schema: Schema;
+  value: unknown;
+  keyword: string;
+  keywordLocation: string;
+  instanceLocation: string;
+  /** Root instance value, for cross-field rules. */
+  rootValue?: unknown;
+  fastFail: boolean;
+  shallow: boolean;
+}
+
+/** Return an error message to reject the value, or nothing to accept it. */
+export type KeywordValidator = (
+  context: KeywordValidationContext,
+) => string | undefined | null;
 
 export interface ValidatorConfig {
   formatValidator?: StringFormatValidatorInterface;
   errorFormatter?: ErrorFormatter;
+  /**
+   * Extension point: custom keyword validators. The core only knows standard
+   * JSON Schema keywords; extensions register their own here (e.g. `x-validate`
+   * with a CEL expression).
+   */
+  keywords?: Record<string, KeywordValidator>;
 }
 
 export class Validator {
   private formatValidator: StringFormatValidatorInterface;
   private errorFormatter: ErrorFormatter;
+  private keywords: Record<string, KeywordValidator>;
 
   constructor(config: ValidatorConfig = {}) {
     this.formatValidator = config.formatValidator ?? stringFormatValidator;
     this.errorFormatter = config.errorFormatter ?? defaultErrorFormatter;
+    this.keywords = config.keywords ?? {};
   }
 
   /**
@@ -34,6 +65,31 @@ export class Validator {
   }
 
   validate(
+    schema: Schema,
+    value: unknown,
+    keywordLocation: string = "#",
+    instanceLocation: string = "",
+    options: ValidatorOptions = {},
+  ): Output {
+    const output = this.validateSchema(
+      schema,
+      value,
+      keywordLocation,
+      instanceLocation,
+      options,
+    );
+    this.applyKeywords(
+      schema,
+      value,
+      keywordLocation,
+      instanceLocation,
+      options,
+      output,
+    );
+    return output;
+  }
+
+  private validateSchema(
     schema: Schema,
     value: unknown,
     keywordLocation: string = "#",
@@ -733,6 +789,41 @@ export class Validator {
             if (fastFail) return;
           }
         }
+      }
+    }
+  }
+
+  /** Run registered custom keyword validators and merge their errors. */
+  private applyKeywords(
+    schema: Schema,
+    value: unknown,
+    keywordLocation: string,
+    instanceLocation: string,
+    options: ValidatorOptions,
+    output: Output,
+  ): void {
+    if (options.fastFail) return;
+    for (const [keyword, handler] of Object.entries(this.keywords)) {
+      if ((schema as Record<string, unknown>)[keyword] === undefined) continue;
+      const message = handler({
+        schema,
+        value,
+        keyword,
+        keywordLocation,
+        instanceLocation,
+        rootValue: options.rootValue,
+        fastFail: Boolean(options.fastFail),
+        shallow: Boolean(options.shallow),
+      });
+      if (message) {
+        output.valid = false;
+        output.errors.push({
+          valid: false,
+          keywordLocation: keywordLocation + "/" + keyword,
+          instanceLocation,
+          errors: [],
+          error: message,
+        });
       }
     }
   }

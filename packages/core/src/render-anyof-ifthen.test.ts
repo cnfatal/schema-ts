@@ -300,9 +300,11 @@ describe("if-then-else with const vs required+const", () => {
   });
 
   describe("toggle switch pattern (common UI scenario)", () => {
-    it("toggle switch without required - unexpected initial behavior", () => {
-      // Common pattern: show/hide fields based on a boolean switch
-      // Problem: if enabled is not set, users expect else branch, but get then branch
+    it("toggle switch without required - default is honored on first render", () => {
+      // Common pattern: show/hide fields based on a boolean switch.
+      // `enabled` declares default: false. Defaults are materialized before
+      // conditions are evaluated, so the then branch stays hidden on first
+      // render instead of leaking until the switch is toggled.
       const schema: Schema = {
         type: "object",
         properties: {
@@ -324,15 +326,19 @@ describe("if-then-else with const vs required+const", () => {
         },
       };
 
-      // Initial load with empty object - enabled is missing
-      // Without required, if passes -> then branch (shows username/password)
-      // This is usually NOT what users expect!
+      // Initial load with empty object - enabled defaults to false -> else
       const runtime = new SchemaRuntime(validator, schema, {
         imageAuth: {},
       });
+      expect(runtime.getValue("/imageAuth/enabled")).toBe(false);
       const usernameNode = runtime.getNode("/imageAuth/username");
-      expect(usernameNode).toBeDefined();
-      expect(usernameNode?.schema.title).toBe("Username");
+      expect(usernameNode).toBeUndefined();
+
+      // Enabling the switch reveals the fields
+      runtime.setValue("/imageAuth/enabled", true);
+      const enabledUsernameNode = runtime.getNode("/imageAuth/username");
+      expect(enabledUsernameNode).toBeDefined();
+      expect(enabledUsernameNode?.schema.title).toBe("Username");
     });
 
     it("toggle switch with required - correct initial behavior", () => {

@@ -1,11 +1,10 @@
-import { Add as AddIcon } from "@mui/icons-material";
+import { Plus, Trash2 } from "lucide-react";
 import { type ArrayWidgetProps } from "@schema-ts/react";
-import { FieldGroup, Button, Flex, ListItem } from "../components";
+import { instanceLevel } from "./util";
+import { FieldGroup } from "@/components/field";
+import { Button } from "@/components/ui/button";
 
-/**
- * Array Widget
- * Uses public FieldGroup, ListItem, Button components, minimize style code
- */
+/** Array widget with add/remove and collapsible long lists. */
 export function DefaultArrayWidget({
   label,
   description,
@@ -15,35 +14,65 @@ export function DefaultArrayWidget({
   items,
   canAdd,
   onAdd,
+  instanceLocation,
+  disabled,
 }: ArrayWidgetProps) {
+  const level = instanceLevel(instanceLocation);
+
   return (
     <FieldGroup
-      ref={fieldRef}
       label={label}
       description={description}
       required={required}
       error={error}
-      compactDescription
-      headerAction={
-        canAdd && (
+      fieldRef={fieldRef}
+      dataPath={instanceLocation}
+      level={level}
+      collapsible={items.length > 5}
+      actions={
+        canAdd ? (
           <Button
-            startIcon={<AddIcon />}
-            variant="contained"
-            size="small"
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={disabled}
             onClick={onAdd}
           >
-            Add
+            <Plus /> Add
           </Button>
-        )
+        ) : undefined
       }
     >
-      <Flex direction="column" gap={2} sx={{ mt: 1 }}>
-        {items?.map((item, index) => (
-          <ListItem key={item.key} index={index} onDelete={item.onRemove}>
-            {item.render({ label: "" })}
-          </ListItem>
-        ))}
-      </Flex>
+      {items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No items yet.</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {items.map((item, index) => (
+            <div
+              key={item.key}
+              className="rounded-lg border border-border bg-muted/20 p-3.5"
+            >
+              <div className="mb-2.5 flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  #{index + 1}
+                </span>
+                {item.onRemove ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Remove item ${index + 1}`}
+                    onClick={() => item.onRemove?.()}
+                  >
+                    <Trash2 />
+                  </Button>
+                ) : null}
+              </div>
+              {item.render({ label: "" })}
+            </div>
+          ))}
+        </div>
+      )}
     </FieldGroup>
   );
 }
