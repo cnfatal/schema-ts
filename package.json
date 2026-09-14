@@ -22,7 +22,7 @@
     "prepare": "husky",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "changeset publish --provenance --access public"
+    "release": "changeset publish"
   },
   "devDependencies": {
     "@changesets/cli": "^3.0.2",
