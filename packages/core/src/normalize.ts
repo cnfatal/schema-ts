@@ -17,6 +17,18 @@ export interface Normalizer {
    * @returns A schema object following the latest draft specification
    */
   normalize(schema: unknown): Schema;
+
+  /**
+   * Materialization policy for optional containers that hold nested defaults.
+   *
+   * - `false` (`strict`): only `required` properties and properties with a
+   *   `default` are materialized. JSON-Schema faithful.
+   * - `true` (`display`): an optional container that transitively declares a
+   *   `default` is created too, so ancestor conditions see what the form shows.
+   *
+   * See the "Materialization Model" section in DESIGN.md.
+   */
+  readonly materializeContainers?: boolean;
 }
 
 /**
@@ -439,6 +451,7 @@ export interface BetterNormalizerOptions {
  * and support for OpenAPI/Kubernetes extension properties on top of base draft transformations.
  */
 export class BetterNormalizer implements Normalizer {
+  readonly materializeContainers = true;
   private options: BetterNormalizerOptions;
 
   constructor(options: BetterNormalizerOptions = {}) {

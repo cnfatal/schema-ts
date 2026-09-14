@@ -138,6 +138,100 @@ new SchemaRuntime(validator, schema, value, { normalizer: "better" });
 The default `"draft"` normalizer never rewrites conditions, keeping the runtime
 faithful to JSON Schema.
 
+## Materialization Model
+
+The runtime keeps a **single value**. Conditional keywords must be evaluated
+against the value the form will display, so defaults and conditions must agree.
+Two mechanisms cooperate:
+
+- **Materialization** writes defaults into the stored value (`applyDefaults`),
+  during Phase 1 of node building.
+- **Projection** builds a _read-only evaluation view_ (`projectDefaults`) used
+  only to evaluate `if`/`anyOf`/`oneOf`. It is never stored, rendered or
+  submitted.
+
+The invariant is: **the projection must equal the value materialization is about
+to produce.** If the two use different rules, a condition can select a branch the
+form never shows. In `charts/default/llamafactory`, `basic.finetuningType`
+defaults to `"lora"` inside the optional `basic` object; the root-level `if`s
+could not see it and rendered `quantization`, `lora` and `freeze` at once.
+
+### The rule
+
+A missing object property (or a missing `prefixItems` slot) is materialized iff:
+
+```
+required
+  OR subschema.default !== undefined
+  OR (policy.materializeContainers AND hasNestedDefault(subschema))
+```
+
+`hasNestedDefault(schema)` is a pure predicate: the schema declares a `default`
+anywhere in its **unconditional** structure — `properties`, `allOf`, `items` and
+`prefixItems`, recursed. Conditional branches (`if`/`then`/`else`, `anyOf`,
+`oneOf`) are intentionally **not** traversed: a default that exists only under a
+branch must not cause its container to be created. The predicate is cached per
+schema object with a `WeakMap`.
+
+`applyDefaults` and `projectDefaults` share this predicate, so the stored value
+and the evaluation view cannot diverge.
+
+### Policies
+
+| policy    | `materializeContainers` | owner              | behaviour                                                                                                                                                       |
+| :-------- | :---------------------- | :----------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `strict`  | `false`                 | `DraftNormalizer`  | JSON-Schema faithful: `default` is an annotation and an absent optional container stays absent.                                                                 |
+| `display` | `true`                  | `BetterNormalizer` | "Materialize as displayed": an optional container that (transitively) declares a default is created and filled, so ancestor conditions see the displayed value. |
+
+The policy lives on the normalizer and is read by the runtime; there is no
+separate runtime flag to keep in sync.
+
+### Why not a fix point
+
+Materialization is bottom-up (defaults sit on descendants) while branch selection
+is top-down (a parent must pick a branch before its children exist). The
+projection breaks that cycle with one deterministic preview. Iterating the
+resolve → materialize cycle to a fixed point would remove the residual ordering
+assumptions but costs an unbounded loop per change and can oscillate; the shared
+predicate covers the authored cases without it.
+
+### Worked example
+
+```
+basic (optional, no default, but finetuningType.default = "lora")
+  └─ root allOf[5..7].if references basic.finetuningType
+```
+
+- `strict`: `basic` stays absent, every `if` sees `finetuningType` missing, and
+  `quantization` / `lora` / `freeze` are all merged. JSON-Schema faithful, but not
+  what the form displays.
+- `display`: `basic` is materialized as `{ finetuningType: "lora" }` and the
+  `if`s select the `lora` branch only. The stored value gains an explicit
+  `basic`.
+
+### Edge cases and decisions
+
+- **Undefined containers.** The validator skips `required` for a non-object
+  instance, so for an entirely `undefined` node `not(properties x const false
+required x)` is _invalid_ and its `then` is excluded. `display` instead stores
+  `x: false` and evaluates the same branch for an explicit reason.
+- **`allOf` order.** JSON Schema does not define an order for `allOf`
+  ([Rendering Order](#rendering-order) is presentation only). Conditions must not
+  depend on it: the projection pre-projects every unconditional `properties`
+  before evaluating conditions, then projects branch defaults as they merge.
+- **Scalars.** Only containers gain the new rule; an optional scalar keeps the
+  `required || default` rule, so `display` never invents `""`/`0`.
+- **Arrays.** Only missing `prefixItems` are filled; `items` beyond the current
+  length are never created.
+
+### Verification
+
+- `display` selects `lora` for the LLaMA-Factory gating (no `quantization` /
+  `freeze`) while `strict` keeps the vacuous result.
+- `applyDefaults` and `projectDefaults` agree under every policy.
+- `hasNestedDefault` ignores defaults under `then`/`else`/`anyOf`/`oneOf`.
+- Rendering order stays as specified in [Rendering Order](#rendering-order).
+
 ## State Consistency
 
 The value states after any operation must match the value initialization logic.

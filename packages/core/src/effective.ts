@@ -1,7 +1,16 @@
 import type { Schema, SchemaType, Output } from "./type";
 import { matchSchemaType, detectSchemaType } from "./util";
 import type { Validator } from "./validate";
-import { projectDefaults } from "./default";
+import { containerKind, hasNestedDefault, projectDefaults } from "./default";
+
+export interface ResolveEffectiveSchemaOptions {
+  /** Root instance, available to custom validators (cross-field rules). */
+  rootValue?: unknown;
+  /** Whether the value is required by its parent (drives undefined projection). */
+  required?: boolean;
+  /** Materialize optional containers that hold nested defaults (`display`). */
+  materializeContainers?: boolean;
+}
 
 export function resolveEffectiveSchema(
   validator: Validator,
@@ -11,15 +20,17 @@ export function resolveEffectiveSchema(
   instanceLocation: string,
   // should validate the value against the effective schema
   validate: boolean = false,
-  // root instance, available to custom validators (cross-field rules)
-  rootValue?: unknown,
-  // whether the value is required by its parent (drives undefined projection)
-  required: boolean = false,
+  options: ResolveEffectiveSchemaOptions = {},
 ): {
   effectiveSchema: Schema;
   type: SchemaType;
   error?: Output;
 } {
+  const {
+    rootValue,
+    required = false,
+    materializeContainers = false,
+  } = options;
   // Schema is expected to be pre-dereferenced (all $refs resolved)
   let effective = schema;
   // Conditional branches are evaluated against the defaults the runtime
@@ -32,6 +43,7 @@ export function resolveEffectiveSchema(
     { ...effective, properties: unconditionalProperties(effective) },
     value,
     required,
+    materializeContainers,
   );
 
   // if-then-else
@@ -52,13 +64,19 @@ export function resolveEffectiveSchema(
           `${keywordLocation}/then`,
           instanceLocation,
           false,
+          { materializeContainers },
         );
         effective = mergeSchema(
           effective,
           res.effectiveSchema,
           `${keywordLocation}/then`,
         );
-        current = projectBranchDefaults(effective, current);
+        current = projectBranchDefaults(
+          effective,
+          current,
+          false,
+          materializeContainers,
+        );
       }
     } else {
       if (effective.else) {
@@ -69,13 +87,19 @@ export function resolveEffectiveSchema(
           `${keywordLocation}/else`,
           instanceLocation,
           false,
+          { materializeContainers },
         );
         effective = mergeSchema(
           effective,
           res.effectiveSchema,
           `${keywordLocation}/else`,
         );
-        current = projectBranchDefaults(effective, current);
+        current = projectBranchDefaults(
+          effective,
+          current,
+          false,
+          materializeContainers,
+        );
       }
     }
     // Remove if/then/else to prevent re-evaluation during shallow validation
@@ -94,13 +118,19 @@ export function resolveEffectiveSchema(
         subKeywordLocation,
         instanceLocation,
         false,
+        { materializeContainers },
       );
       effective = mergeSchema(
         effective,
         res.effectiveSchema,
         subKeywordLocation,
       );
-      current = projectBranchDefaults(effective, current);
+      current = projectBranchDefaults(
+        effective,
+        current,
+        false,
+        materializeContainers,
+      );
     }
     // Remove allOf to prevent re-evaluation during shallow validation
     const { allOf: _, ...rest } = effective;
@@ -125,13 +155,19 @@ export function resolveEffectiveSchema(
           subKeywordLocation,
           instanceLocation,
           false,
+          { materializeContainers },
         );
         effective = mergeSchema(
           effective,
           res.effectiveSchema,
           subKeywordLocation,
         );
-        current = projectBranchDefaults(effective, current);
+        current = projectBranchDefaults(
+          effective,
+          current,
+          false,
+          materializeContainers,
+        );
       }
     }
     // Remove anyOf to prevent re-evaluation during shallow validation
@@ -237,11 +273,25 @@ function projectBranchDefaults(
   schema: Schema,
   value: unknown,
   required = false,
+  materializeContainers = false,
 ): unknown {
   if (value === undefined) {
+    // Under the `display` policy a container holding nested defaults is
+    // materialized too, so its own conditions see the value the form renders.
+    if (materializeContainers && hasNestedDefault(schema)) {
+      const kind = containerKind(schema);
+      if (kind === "object") {
+        return projectDefaults("object", {}, schema, false, true);
+      }
+      if (kind === "array") {
+        return projectDefaults("array", [], schema, false, true);
+      }
+    }
     // A required value is materialized by the runtime, so its default must be
     // visible to the conditions as well.
-    return required ? projectDefaults("unknown", value, schema, true) : value;
+    return required
+      ? projectDefaults("unknown", value, schema, true, materializeContainers)
+      : value;
   }
   if (value === null) return value;
   const type = Array.isArray(value)
@@ -250,7 +300,7 @@ function projectBranchDefaults(
       ? "object"
       : undefined;
   if (type === undefined) return value;
-  return projectDefaults(type, value, schema, false);
+  return projectDefaults(type, value, schema, false, materializeContainers);
 }
 
 function mergeStrings(a?: string[], b?: string[]): string[] | undefined {

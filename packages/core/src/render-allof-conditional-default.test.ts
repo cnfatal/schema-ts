@@ -83,6 +83,41 @@ describe("allOf conditional defaults", () => {
     expect(keys).toContain("advanced");
   });
 
+  it("hides a gated field inside an absent optional container", () => {
+    const nested: Schema = {
+      type: "object",
+      allOf: [
+        {
+          properties: {
+            galore: {
+              type: "object",
+              allOf: [
+                {
+                  properties: {
+                    useGalore: { type: "boolean", default: false },
+                  },
+                  if: {
+                    not: {
+                      properties: { useGalore: { const: false } },
+                      required: ["useGalore"],
+                    },
+                  },
+                  then: { properties: { galoreRank: { type: "integer" } } },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+    const runtime = new SchemaRuntime(new Validator(), nested, {});
+    const keys = (runtime.getNode("/galore")?.children ?? []).map(
+      (child) => child.instanceLocation,
+    );
+    expect(keys).toContain("/galore/useGalore");
+    expect(keys).not.toContain("/galore/galoreRank");
+  });
+
   it("applies defaults from later allOf entries before earlier conditions", () => {
     // allOf is unordered, so a default declared in a later entry must still be
     // visible to an earlier branch's condition.

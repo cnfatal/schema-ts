@@ -86,25 +86,105 @@ export function getDefaultValue(
   }
 }
 
+const nestedDefaultCache = new WeakMap<object, boolean>();
+
+/**
+ * Whether the schema declares a `default` anywhere in its **unconditional**
+ * structure (`properties`, `allOf`, `items`, `prefixItems`). Conditional
+ * branches (`if`/`then`/`else`, `anyOf`, `oneOf`) are intentionally not
+ * traversed: a default that only exists under a branch must not cause its
+ * container to be created. Cached per schema object.
+ */
+export function hasNestedDefault(schema: Schema): boolean {
+  if (typeof schema !== "object" || schema === null) return false;
+  const cached = nestedDefaultCache.get(schema);
+  if (cached !== undefined) return cached;
+
+  let result = schema.default !== undefined;
+  if (!result && schema.properties) {
+    for (const subschema of Object.values(schema.properties)) {
+      if (hasNestedDefault(subschema)) {
+        result = true;
+        break;
+      }
+    }
+  }
+  if (!result && schema.prefixItems) {
+    for (const subschema of schema.prefixItems) {
+      if (hasNestedDefault(subschema)) {
+        result = true;
+        break;
+      }
+    }
+  }
+  if (!result && schema.items && typeof schema.items === "object") {
+    result = hasNestedDefault(schema.items);
+  }
+  if (!result && schema.allOf) {
+    for (const subschema of schema.allOf) {
+      if (hasNestedDefault(subschema)) {
+        result = true;
+        break;
+      }
+    }
+  }
+
+  nestedDefaultCache.set(schema, result);
+  return result;
+}
+
+/** Infer the container kind of a schema, used to materialize empty containers. */
+export function containerKind(schema: Schema): "object" | "array" | undefined {
+  const [type] = typeNullable(schema);
+  if (type === "object" || type === "array") return type;
+  if (
+    schema.properties ||
+    schema.patternProperties ||
+    schema.additionalProperties
+  ) {
+    return "object";
+  }
+  if (schema.items || schema.prefixItems) return "array";
+  return undefined;
+}
+
 /**
  * The missing-property defaults the runtime materializes into an object value.
  * Returned as `[key, defaultValue]` entries. Shared by `applyDefaults`
  * (materialize into state) and `projectDefaults` (project a read-only copy) so
  * both agree on which properties receive a value and what that value is.
+ *
+ * When `materializeContainers` is set (the `display` policy), an optional
+ * container that holds nested defaults is created too, so ancestor conditions
+ * see the value the form renders.
  */
 function missingPropertyDefaults(
   schema: Schema,
   isMissing: (key: string) => boolean,
+  materializeContainers: boolean,
 ): Array<[string, unknown]> {
   const result: Array<[string, unknown]> = [];
   for (const [key, subschema] of Object.entries(schema.properties || {})) {
     if (!isMissing(key)) continue;
     const required = schema.required?.includes(key) ?? false;
-    // A property is materialized when it is required or declares a default.
-    // Compare with === undefined (not truthiness) so falsy defaults such as
-    // false, 0 and "" are applied.
-    if (!required && subschema.default === undefined) continue;
-    const value = getDefaultValue(subschema, required);
+    // A property is materialized when it is required, declares a default, or is
+    // a container holding nested defaults under the `display` policy. Compare
+    // with === undefined (not truthiness) so falsy defaults such as false, 0 and
+    // "" are applied.
+    const hasDefault = subschema.default !== undefined;
+    const materializeContainer =
+      !required &&
+      !hasDefault &&
+      materializeContainers &&
+      hasNestedDefault(subschema);
+    if (!required && !hasDefault && !materializeContainer) continue;
+
+    let value = getDefaultValue(subschema, required);
+    if (value === undefined && materializeContainer) {
+      const kind = containerKind(subschema);
+      if (kind === "object") value = {};
+      else if (kind === "array") value = [];
+    }
     // A required property whose type cannot be inferred has no value to apply;
     // leave the key absent instead of storing undefined.
     if (value === undefined) continue;
@@ -118,6 +198,7 @@ export function applyDefaults(
   value: unknown,
   schema: Schema,
   required: boolean = false,
+  materializeContainers: boolean = false,
 ): [unknown, boolean] {
   if (value === undefined) {
     if (!required) {
@@ -141,6 +222,7 @@ export function applyDefaults(
     for (const [key, defaultValue] of missingPropertyDefaults(
       schema,
       (key) => obj[key] === undefined,
+      materializeContainers,
     )) {
       obj[key] = defaultValue;
       changed = true;
@@ -188,6 +270,7 @@ export function projectDefaults(
   value: unknown,
   schema: Schema,
   required: boolean = false,
+  materializeContainers: boolean = false,
 ): unknown {
   if (value === undefined) {
     if (!required) return value;
@@ -197,7 +280,13 @@ export function projectDefaults(
     }
     // Project the materialized container so optional/`default` properties and
     // nested defaults are included, exactly as `applyDefaults` would store.
-    return projectDefaults(type, defaultValue, schema, required);
+    return projectDefaults(
+      type,
+      defaultValue,
+      schema,
+      required,
+      materializeContainers,
+    );
   }
 
   if (type === "object") {
@@ -207,7 +296,11 @@ export function projectDefaults(
     const source = value as Record<string, unknown>;
     // Same missing-property rule the runtime materializes.
     const defaults = new Map(
-      missingPropertyDefaults(schema, (key) => source[key] === undefined),
+      missingPropertyDefaults(
+        schema,
+        (key) => source[key] === undefined,
+        materializeContainers,
+      ),
     );
     let copy: Record<string, unknown> | undefined;
     for (const [key, subschema] of Object.entries(schema.properties || {})) {
@@ -221,6 +314,7 @@ export function projectDefaults(
         next,
         subschema,
         isRequired,
+        materializeContainers,
       );
       const changed =
         current === undefined ? next !== undefined : projected !== current;
@@ -246,6 +340,7 @@ export function projectDefaults(
         item,
         itemSchema,
         true,
+        materializeContainers,
       );
       if (projected !== item) {
         if (!copy) copy = value.slice();

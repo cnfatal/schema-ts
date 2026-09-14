@@ -90,6 +90,9 @@ export class SchemaRuntime {
 
   private normalizer: Normalizer;
 
+  /** Whether nested defaults inside optional containers are materialized. */
+  private materializeContainers: boolean;
+
   private watchers: Record<string, Set<(e: SchemaChangeEvent) => void>> = {};
   private globalWatchers: Set<(e: SchemaChangeEvent) => void> = new Set();
 
@@ -135,6 +138,7 @@ export class SchemaRuntime {
       (options.normalizer === "better"
         ? new BetterNormalizer()
         : new DraftNormalizer());
+    this.materializeContainers = this.normalizer.materializeContainers ?? false;
     this.value = value;
     this.rootSchema = this.resolveSchema(schema);
     this.root = this.createEmptyNode("", "#");
@@ -678,7 +682,13 @@ export class SchemaRuntime {
       return;
     }
     const value = this.getValue(instanceLocation);
-    const [newValue, changed] = applyDefaults(type, value, newSchema, required);
+    const [newValue, changed] = applyDefaults(
+      type,
+      value,
+      newSchema,
+      required,
+      this.materializeContainers,
+    );
     if (changed) {
       this.setJsonPointer(instanceLocation, newValue);
     }
@@ -721,8 +731,11 @@ export class SchemaRuntime {
       keywordLocation,
       instanceLocation,
       false,
-      this.value,
-      node.required,
+      {
+        rootValue: this.value,
+        required: node.required,
+        materializeContainers: this.materializeContainers,
+      },
     );
   }
 
@@ -1074,7 +1087,11 @@ export class SchemaRuntime {
             keywordLocation,
             instanceLocation,
             true,
-            this.value,
+            {
+              rootValue: this.value,
+              required: node.required,
+              materializeContainers: this.materializeContainers,
+            },
           );
           error = validated.error;
         } else {
