@@ -1,0 +1,1759 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema#",
+  "type": "object",
+  "title": "LLaMA-Factory 微调配置",
+  "description": "基于 LLaMA-Factory 框架的大语言模型微调配置，支持 LoRA、QLoRA、全参数微调等多种方式",
+  "required": ["flavor"],
+  "allOf": [
+    {
+      "properties": {
+        "flavor": {
+          "type": "object",
+          "title": "资源规格",
+          "description": "选择 GPU 计算资源规格，建议根据模型大小选择：7B 模型至少需要 24GB 显存，13B 模型至少需要 40GB 显存",
+          "minProperties": 1,
+          "x-resource-enum": {
+            "resource": "flavors",
+            "type": "gpu"
+          }
+        },
+        "runMode": {
+          "type": "string",
+          "title": "运行模式",
+          "description": "快速微调适合新手；专家微调显示全部高级参数；WebUI 模式启动图形界面交互式操作",
+          "default": "quick",
+          "enum": ["quick", "expert", "webui"],
+          "x-enum": [
+            {
+              "label": "快速微调",
+              "value": "quick",
+              "description": "仅显示常用参数，适合新手快速上手"
+            },
+            {
+              "label": "专家微调",
+              "value": "expert",
+              "description": "显示全部高级参数，适合精细调优"
+            },
+            {
+              "label": "WebUI 界面",
+              "value": "webui",
+              "description": "启动图形界面，交互式操作"
+            }
+          ]
+        }
+      },
+      "if": {
+        "not": {
+          "properties": {
+            "runMode": {
+              "const": "webui"
+            }
+          },
+          "required": ["runMode"]
+        }
+      },
+      "then": {
+        "properties": {
+          "basic": {
+            "type": "object",
+            "title": "基础配置",
+            "description": "微调任务的核心配置项，包括模型、数据集、训练方法等必要参数",
+            "properties": {
+              "model": {
+                "type": "object",
+                "title": "模型配置",
+                "description": "选择基座模型的来源，并配置该来源的地址和访问凭证",
+                "x-order": 1,
+                "allOf": [
+                  {
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "title": "模型来源",
+                        "default": "moha",
+                        "enum": ["moha", "modelscope", "huggingface", "local"],
+                        "x-enum": [
+                          { "label": "平台模型库", "value": "moha" },
+                          { "label": "ModelScope", "value": "modelscope" },
+                          { "label": "HuggingFace", "value": "huggingface" },
+                          { "label": "本地存储", "value": "local" }
+                        ]
+                      }
+                    },
+                    "allOf": [
+                      {
+                        "if": {
+                          "properties": { "source": { "const": "moha" } },
+                          "required": ["source"]
+                        },
+                        "then": {
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "title": "模型",
+                              "description": "从平台模型库选择要训练的模型",
+                              "default": "",
+                              "x-resource-enum": {
+                                "resource": "models",
+                                "source": "moha"
+                              },
+                              "x-cols": 12
+                            },
+                            "endpoint": {
+                              "type": "string",
+                              "title": "Moha 服务地址",
+                              "format": "uri",
+                              "x-cols": 6,
+                              "x-platform-default": "mohaAddress"
+                            },
+                            "token": {
+                              "type": "string",
+                              "title": "模型访问令牌",
+                              "format": "password",
+                              "writeOnly": true,
+                              "x-cols": 6,
+                              "x-platform-default": "mohaToken"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "if": {
+                          "properties": {
+                            "source": { "const": "huggingface" }
+                          },
+                          "required": ["source"]
+                        },
+                        "then": {
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "title": "HuggingFace 模型 ID",
+                              "description": "例如 Qwen/Qwen2.5-7B-Instruct",
+                              "default": "",
+                              "x-cols": 12
+                            },
+                            "endpoint": {
+                              "type": "string",
+                              "title": "HuggingFace 镜像端点",
+                              "format": "uri",
+                              "x-cols": 6
+                            },
+                            "token": {
+                              "type": "string",
+                              "title": "模型访问令牌",
+                              "format": "password",
+                              "writeOnly": true,
+                              "x-cols": 6
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "if": {
+                          "properties": { "source": { "const": "modelscope" } },
+                          "required": ["source"]
+                        },
+                        "then": {
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "title": "ModelScope 模型 ID",
+                              "description": "例如 Qwen/Qwen2.5-7B-Instruct",
+                              "default": "",
+                              "x-cols": 12
+                            },
+                            "token": {
+                              "type": "string",
+                              "title": "模型访问令牌",
+                              "format": "password",
+                              "writeOnly": true,
+                              "x-cols": 12
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "if": {
+                          "properties": { "source": { "const": "local" } },
+                          "required": ["source"]
+                        },
+                        "then": {
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "title": "模型存储卷",
+                              "default": "",
+                              "x-resource-enum": {
+                                "resource": "storagevolumes",
+                                "type": "model"
+                              },
+                              "x-cols": 12
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              "dataset": {
+                "type": "object",
+                "title": "数据集配置",
+                "description": "选择训练数据集的来源，并配置该来源的地址和访问凭证",
+                "x-order": 2,
+                "allOf": [
+                  {
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "title": "数据集来源",
+                        "default": "moha",
+                        "enum": ["moha", "modelscope", "huggingface"],
+                        "x-enum": [
+                          { "label": "平台数据集", "value": "moha" },
+                          { "label": "ModelScope", "value": "modelscope" },
+                          { "label": "HuggingFace", "value": "huggingface" }
+                        ]
+                      }
+                    },
+                    "allOf": [
+                      {
+                        "if": {
+                          "properties": { "source": { "const": "moha" } },
+                          "required": ["source"]
+                        },
+                        "then": {
+                          "properties": {
+                            "names": {
+                              "type": "array",
+                              "items": { "type": "string" },
+                              "title": "数据集",
+                              "description": "从平台数据集中选择训练数据",
+                              "default": [],
+                              "uniqueItems": true,
+                              "x-resource-enum": {
+                                "resource": "datasets",
+                                "source": "moha"
+                              },
+                              "x-cols": 12
+                            },
+                            "endpoint": {
+                              "type": "string",
+                              "title": "Moha 服务地址",
+                              "format": "uri",
+                              "x-cols": 6,
+                              "x-platform-default": "mohaAddress"
+                            },
+                            "token": {
+                              "type": "string",
+                              "title": "数据集访问令牌",
+                              "format": "password",
+                              "writeOnly": true,
+                              "x-cols": 6,
+                              "x-platform-default": "mohaToken"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "if": {
+                          "properties": {
+                            "source": { "const": "huggingface" }
+                          },
+                          "required": ["source"]
+                        },
+                        "then": {
+                          "properties": {
+                            "names": {
+                              "type": "array",
+                              "items": { "type": "string" },
+                              "title": "HuggingFace 数据集 ID",
+                              "description": "例如 tatsu-lab/alpaca",
+                              "default": [],
+                              "uniqueItems": true,
+                              "x-cols": 12
+                            },
+                            "endpoint": {
+                              "type": "string",
+                              "title": "HuggingFace 镜像端点",
+                              "format": "uri",
+                              "x-cols": 6
+                            },
+                            "token": {
+                              "type": "string",
+                              "title": "数据集访问令牌",
+                              "format": "password",
+                              "writeOnly": true,
+                              "x-cols": 6
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "if": {
+                          "properties": { "source": { "const": "modelscope" } },
+                          "required": ["source"]
+                        },
+                        "then": {
+                          "properties": {
+                            "names": {
+                              "type": "array",
+                              "items": { "type": "string" },
+                              "title": "ModelScope 数据集 ID",
+                              "description": "输入 ModelScope 数据集 ID 或内置数据集名称",
+                              "default": [],
+                              "uniqueItems": true,
+                              "x-cols": 12
+                            },
+                            "token": {
+                              "type": "string",
+                              "title": "数据集访问令牌",
+                              "format": "password",
+                              "writeOnly": true,
+                              "x-cols": 12
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "preDownload": {
+                        "type": "boolean",
+                        "title": "预下载数据集",
+                        "description": "通过 InitContainer 预先下载数据集并生成 dataset_info.json",
+                        "default": false,
+                        "x-cols": 12
+                      }
+                    }
+                  }
+                ]
+              },
+              "stage": {
+                "type": "string",
+                "title": "训练阶段",
+                "description": "选择训练任务类型：SFT 用于指令微调，PT 用于继续预训练，RM/PPO/DPO/KTO 用于人类偏好对齐",
+                "default": "sft",
+                "x-order": 10,
+                "enum": ["sft", "pt", "rm", "ppo", "dpo", "kto"],
+                "x-enum": [
+                  {
+                    "label": "监督微调 (SFT)",
+                    "value": "sft",
+                    "description": "最常用，用于指令跟随能力训练。数据格式：指令-回复对 (instruction-output)"
+                  },
+                  {
+                    "label": "预训练 (PT)",
+                    "value": "pt",
+                    "description": "继续预训练，扩展模型知识。数据格式：纯文本 (text)"
+                  },
+                  {
+                    "label": "奖励建模 (RM)",
+                    "value": "rm",
+                    "description": "训练奖励模型。数据格式：偏好对 (chosen-rejected)"
+                  },
+                  {
+                    "label": "PPO 强化学习",
+                    "value": "ppo",
+                    "description": "基于人类反馈的强化学习。需要奖励模型 + 指令数据"
+                  },
+                  {
+                    "label": "DPO 直接偏好优化",
+                    "value": "dpo",
+                    "description": "无需奖励模型的偏好学习。数据格式：偏好对 (chosen-rejected)"
+                  },
+                  {
+                    "label": "KTO 知识迁移优化",
+                    "value": "kto",
+                    "description": "知识迁移优化方法。数据格式：二元反馈 (response + label)"
+                  }
+                ]
+              },
+              "finetuningType": {
+                "type": "string",
+                "title": "微调方法",
+                "description": "LoRA：高效微调，只训练少量参数；QLoRA：结合量化进一步节省显存；Freeze：冻结大部分层；Full：训练全部参数（显存需求最高）",
+                "default": "lora",
+                "x-order": 11,
+                "enum": ["lora", "qlora", "freeze", "full"],
+                "x-enum": [
+                  {
+                    "label": "LoRA",
+                    "value": "lora",
+                    "description": "低秩适配，推荐大多数场景"
+                  },
+                  {
+                    "label": "QLoRA",
+                    "value": "qlora",
+                    "description": "4-bit量化+LoRA，显存最省"
+                  },
+                  {
+                    "label": "Freeze",
+                    "value": "freeze",
+                    "description": "冻结层微调"
+                  },
+                  {
+                    "label": "Full",
+                    "value": "full",
+                    "description": "全参数微调，效果最好但显存需求高"
+                  }
+                ]
+              }
+            }
+          },
+          "training": {
+            "type": "object",
+            "title": "训练配置",
+            "description": "控制训练过程的核心超参数，直接影响训练效果和收敛速度",
+            "properties": {
+              "learningRate": {
+                "type": "number",
+                "title": "学习率",
+                "description": "AdamW 优化器的初始学习率。LoRA 微调通常使用 1e-4~5e-5，全参数微调使用 1e-5~5e-6。过大会导致不收敛，过小会收敛缓慢",
+                "default": 5e-5,
+                "minimum": 1e-7,
+                "maximum": 0.01,
+                "x-cols": 6
+              },
+              "numTrainEpochs": {
+                "type": "number",
+                "title": "训练轮数",
+                "description": "遍历整个训练集的次数。通常 1-5 轮即可，过多容易过拟合。可设置小数如 0.5 表示只训练半轮",
+                "default": 3.0,
+                "minimum": 0.1,
+                "maximum": 100,
+                "x-cols": 6
+              },
+              "perDeviceTrainBatchSize": {
+                "type": "integer",
+                "title": "批次大小",
+                "description": "每个 GPU 每次处理的样本数。越大训练越稳定但显存占用越高，建议从 2 开始逐步增加直到显存接近满载",
+                "default": 2,
+                "minimum": 1,
+                "maximum": 128,
+                "x-cols": 6
+              },
+              "gradientAccumulationSteps": {
+                "type": "integer",
+                "title": "梯度累积步数",
+                "description": "累积多少个 mini-batch 后才更新一次参数。有效批次大小 = 批次大小 × 累积步数 × GPU数量。用于在显存有限时模拟大批次训练",
+                "default": 8,
+                "minimum": 1,
+                "maximum": 256,
+                "x-cols": 6
+              },
+              "cutoffLen": {
+                "type": "integer",
+                "title": "截断长度",
+                "description": "输入序列的最大 token 数，超过会被截断。需要根据数据集特点和显存容量设置，常用值：1024、2048、4096",
+                "default": 1024,
+                "minimum": 64,
+                "maximum": 32768,
+                "x-cols": 6
+              },
+              "maxSamples": {
+                "type": "integer",
+                "title": "最大样本数",
+                "description": "每个数据集最多使用的样本数，设置较小值可用于快速验证配置是否正确。正式训练时可设置较大值或删除此限制",
+                "default": 100000,
+                "minimum": 100,
+                "maximum": 10000000,
+                "x-cols": 6
+              },
+              "valSize": {
+                "type": "number",
+                "title": "验证集比例",
+                "description": "从训练集中划分出作为验证集的比例。0.1 表示 10% 用于验证，用于监控训练效果防止过拟合。设为 0 表示不划分验证集",
+                "default": 0.1,
+                "minimum": 0,
+                "maximum": 0.5,
+                "x-cols": 6
+              }
+            }
+          },
+          "monitoring": {
+            "type": "object",
+            "title": "监控配置",
+            "description": "配置训练过程中的实验跟踪和指标上报。选择或填写 TrackIO 服务地址即可启用监控。",
+            "properties": {
+              "trackioServerUrl": {
+                "type": "string",
+                "title": "TrackIO 服务地址",
+                "description": "TrackIO 服务器的完整 URL 地址，用于记录训练指标和曲线。可从列表选择已部署的实验追踪服务，或手动输入地址。留空则不启用监控上报。",
+                "default": "",
+                "x-resource-enum": {
+                  "resource": "endpoints",
+                  "type": "experiment"
+                },
+                "x-cols": 12
+              }
+            }
+          },
+          "output": {
+            "type": "object",
+            "title": "输出配置",
+            "description": "配置训练产物的输出和处理方式",
+            "allOf": [
+              {
+                "properties": {
+                  "pushToHub": {
+                    "type": "boolean",
+                    "title": "推送到模型仓库",
+                    "description": "训练完成后自动将模型推送到 HuggingFace Hub 或 ModelScope，便于团队共享和版本管理",
+                    "default": false,
+                    "x-cols": 6
+                  }
+                },
+                "if": {
+                  "not": {
+                    "properties": {
+                      "pushToHub": {
+                        "const": false
+                      }
+                    },
+                    "required": ["pushToHub"]
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "hubTarget": {
+                      "type": "string",
+                      "title": "目标仓库",
+                      "description": "选择推送到哪个模型仓库平台",
+                      "default": "huggingface",
+                      "enum": ["huggingface", "modelscope"],
+                      "x-enum": [
+                        {
+                          "label": "HuggingFace Hub",
+                          "value": "huggingface",
+                          "description": "推送到 HuggingFace"
+                        },
+                        {
+                          "label": "ModelScope 魔搭",
+                          "value": "modelscope",
+                          "description": "推送到阿里魔搭社区"
+                        }
+                      ]
+                    },
+                    "hubModelId": {
+                      "type": "string",
+                      "title": "仓库模型 ID",
+                      "description": "推送到仓库的模型 ID，格式：username/model-name。例如：myuser/qwen2-lora-finetuned（启用推送时必填）",
+                      "default": "",
+                      "minLength": 1,
+                      "x-cols": 6
+                    },
+                    "hubToken": {
+                      "type": "string",
+                      "title": "仓库访问令牌",
+                      "description": "HuggingFace 或 ModelScope 的写入权限令牌，用于推送模型（启用推送时必填）",
+                      "default": "",
+                      "format": "password",
+                      "minLength": 1,
+                      "x-cols": 6
+                    }
+                  },
+                  "required": ["hubModelId", "hubToken"]
+                }
+              }
+            ]
+          },
+          "sharedStorage": {
+            "type": "object",
+            "title": "共享存储",
+            "description": "训练-推理一体化共享存储。训练产物（LoRA 适配器或合并模型）将写入此文件存储，推理服务可直接加载，无需额外迁移。适合在同一环境内快速完成「微调→部署」闭环",
+            "allOf": [
+              {
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "title": "启用共享存储",
+                    "description": "启用后，训练产物将输出到共享文件存储，推理服务（vLLM、SGLang）可直接加载使用",
+                    "default": false,
+                    "x-cols": 12
+                  }
+                },
+                "if": {
+                  "not": {
+                    "properties": {
+                      "enabled": {
+                        "const": false
+                      }
+                    },
+                    "required": ["enabled"]
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "existingClaim": {
+                      "type": "string",
+                      "title": "共享文件存储",
+                      "description": "选择已创建的共享存储卷（PVC），需支持 ReadWriteMany 访问模式以便训练和推理服务同时访问",
+                      "x-resource-enum": {
+                        "resource": "storagevolumes"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "allOf": [
+          {
+            "not": {
+              "properties": {
+                "runMode": {
+                  "const": "webui"
+                }
+              },
+              "required": ["runMode"]
+            }
+          },
+          {
+            "not": {
+              "properties": {
+                "runMode": {
+                  "const": "quick"
+                }
+              },
+              "required": ["runMode"]
+            }
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "basic": {
+            "type": "object",
+            "properties": {
+              "template": {
+                "type": "string",
+                "title": "对话模板",
+                "description": "对话格式模板，必须与基座模型匹配。选择「自动」会根据模型名称自动推断",
+                "default": "auto",
+                "enum": [
+                  "auto",
+                  "qwen",
+                  "llama3",
+                  "chatml",
+                  "llama2",
+                  "mistral",
+                  "yi",
+                  "deepseek",
+                  "baichuan2",
+                  "intern2",
+                  "glm4",
+                  "gemma",
+                  "phi3",
+                  "default"
+                ],
+                "x-enum": [
+                  {
+                    "label": "自动推断",
+                    "value": "auto",
+                    "description": "根据模型名称自动选择模板"
+                  },
+                  {
+                    "label": "Qwen",
+                    "value": "qwen",
+                    "description": "通义千问系列"
+                  },
+                  {
+                    "label": "Llama3",
+                    "value": "llama3",
+                    "description": "Meta Llama 3 系列"
+                  },
+                  {
+                    "label": "ChatML",
+                    "value": "chatml",
+                    "description": "OpenAI ChatML 格式"
+                  },
+                  {
+                    "label": "Llama2",
+                    "value": "llama2",
+                    "description": "Meta Llama 2 系列"
+                  },
+                  {
+                    "label": "Mistral",
+                    "value": "mistral",
+                    "description": "Mistral AI 模型"
+                  },
+                  {
+                    "label": "Yi",
+                    "value": "yi",
+                    "description": "零一万物 Yi 系列"
+                  },
+                  {
+                    "label": "DeepSeek",
+                    "value": "deepseek",
+                    "description": "深度求索模型"
+                  },
+                  {
+                    "label": "Baichuan2",
+                    "value": "baichuan2",
+                    "description": "百川智能模型"
+                  },
+                  {
+                    "label": "InternLM2",
+                    "value": "intern2",
+                    "description": "书生浦语模型"
+                  },
+                  {
+                    "label": "GLM4",
+                    "value": "glm4",
+                    "description": "智谱 ChatGLM4"
+                  },
+                  {
+                    "label": "Gemma",
+                    "value": "gemma",
+                    "description": "Google Gemma"
+                  },
+                  {
+                    "label": "Phi3",
+                    "value": "phi3",
+                    "description": "微软 Phi-3"
+                  },
+                  {
+                    "label": "默认",
+                    "value": "default",
+                    "description": "通用默认格式"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "allOf": [
+          {
+            "not": {
+              "properties": {
+                "runMode": {
+                  "const": "webui"
+                }
+              },
+              "required": ["runMode"]
+            }
+          },
+          {
+            "not": {
+              "properties": {
+                "sharedStorage": {
+                  "properties": {
+                    "enabled": {
+                      "const": true
+                    }
+                  },
+                  "required": ["enabled"]
+                }
+              },
+              "required": ["sharedStorage"]
+            }
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "basic": {
+            "type": "object",
+            "properties": {
+              "outputDir": {
+                "type": "string",
+                "title": "输出目录",
+                "description": "训练产物保存目录。注意：启用「共享存储」后此选项不生效，输出将写入共享存储卷",
+                "default": "/app/output"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "anyOf": [
+            {
+              "properties": {
+                "runMode": {
+                  "const": "webui"
+                }
+              },
+              "required": ["runMode"]
+            },
+            {
+              "properties": {
+                "runMode": {
+                  "const": "quick"
+                }
+              },
+              "required": ["runMode"]
+            }
+          ]
+        }
+      },
+      "then": {
+        "properties": {
+          "advanced": {
+            "type": "object",
+            "title": "进阶配置",
+            "description": "优化器、学习率调度、梯度裁剪等高级训练参数，用于精细调优训练过程",
+            "properties": {
+              "optimizer": {
+                "type": "string",
+                "title": "优化器",
+                "description": "参数更新算法。AdamW 是最常用的选择，8-bit 版本可节省显存，Adafactor 适合超大模型",
+                "default": "adamw_torch",
+                "x-cols": 6,
+                "enum": [
+                  "adamw_torch",
+                  "adamw_hf",
+                  "adamw_bnb_8bit",
+                  "sgd",
+                  "adafactor",
+                  "paged_adamw_8bit",
+                  "paged_adamw_32bit"
+                ],
+                "x-enum": [
+                  {
+                    "label": "AdamW (PyTorch)",
+                    "value": "adamw_torch",
+                    "description": "PyTorch 原生实现，推荐"
+                  },
+                  {
+                    "label": "AdamW (HF)",
+                    "value": "adamw_hf",
+                    "description": "HuggingFace 实现"
+                  },
+                  {
+                    "label": "AdamW (8-bit)",
+                    "value": "adamw_bnb_8bit",
+                    "description": "8-bit 量化，节省显存"
+                  },
+                  {
+                    "label": "SGD",
+                    "value": "sgd",
+                    "description": "随机梯度下降"
+                  },
+                  {
+                    "label": "Adafactor",
+                    "value": "adafactor",
+                    "description": "自适应学习率，超大模型适用"
+                  },
+                  {
+                    "label": "Paged AdamW (8-bit)",
+                    "value": "paged_adamw_8bit",
+                    "description": "分页 8-bit，显存不足时使用"
+                  },
+                  {
+                    "label": "Paged AdamW (32-bit)",
+                    "value": "paged_adamw_32bit",
+                    "description": "分页 32-bit"
+                  }
+                ]
+              },
+              "lrSchedulerType": {
+                "type": "string",
+                "title": "学习率调度器",
+                "description": "控制学习率在训练过程中如何变化。Cosine 最常用，先快后慢符合训练规律",
+                "default": "cosine",
+                "x-cols": 6,
+                "enum": [
+                  "cosine",
+                  "linear",
+                  "constant",
+                  "constant_with_warmup",
+                  "polynomial",
+                  "inverse_sqrt"
+                ],
+                "x-enum": [
+                  {
+                    "label": "Cosine",
+                    "value": "cosine",
+                    "description": "余弦退火，推荐"
+                  },
+                  {
+                    "label": "Linear",
+                    "value": "linear",
+                    "description": "线性衰减"
+                  },
+                  {
+                    "label": "Constant",
+                    "value": "constant",
+                    "description": "恒定学习率"
+                  },
+                  {
+                    "label": "Constant with Warmup",
+                    "value": "constant_with_warmup",
+                    "description": "预热后恒定"
+                  },
+                  {
+                    "label": "Polynomial",
+                    "value": "polynomial",
+                    "description": "多项式衰减"
+                  },
+                  {
+                    "label": "Inverse Sqrt",
+                    "value": "inverse_sqrt",
+                    "description": "平方根倒数衰减"
+                  }
+                ]
+              },
+              "warmupRatio": {
+                "type": "number",
+                "title": "预热比例",
+                "description": "学习率预热阶段占总步数的比例。预热期间学习率从 0 线性增加到设定值，有助于训练稳定。通常设置 0.03~0.1",
+                "default": 0.1,
+                "minimum": 0,
+                "maximum": 1,
+                "x-cols": 6
+              },
+              "warmupSteps": {
+                "type": "integer",
+                "title": "预热步数",
+                "description": "学习率预热的具体步数。如果设置了此值，将覆盖预热比例的计算。设为 0 表示使用比例计算",
+                "default": 0,
+                "minimum": 0,
+                "maximum": 10000,
+                "x-cols": 6
+              },
+              "maxGradNorm": {
+                "type": "number",
+                "title": "梯度裁剪",
+                "description": "梯度范数裁剪阈值，当梯度范数超过此值时会被缩放。用于防止梯度爆炸导致训练不稳定，通常设置 0.5~1.0",
+                "default": 1.0,
+                "minimum": 0.1,
+                "maximum": 10.0,
+                "x-cols": 6
+              },
+              "loggingSteps": {
+                "type": "integer",
+                "title": "日志记录步数",
+                "description": "每隔多少步记录一次训练指标（loss、学习率等）到日志。设置过小会影响训练速度",
+                "default": 10,
+                "minimum": 1,
+                "maximum": 1000,
+                "x-cols": 6
+              },
+              "saveSteps": {
+                "type": "integer",
+                "title": "保存步数",
+                "description": "每隔多少步保存一次模型检查点。检查点可用于恢复训练或选择最佳模型。建议根据训练总步数合理设置",
+                "default": 500,
+                "minimum": 10,
+                "maximum": 10000,
+                "x-cols": 6
+              },
+              "saveTotal": {
+                "type": "integer",
+                "title": "最大保存数",
+                "description": "最多保留的检查点数量。超过后会自动删除最旧的检查点，节省磁盘空间",
+                "default": 3,
+                "minimum": 1,
+                "maximum": 100,
+                "x-cols": 6
+              }
+            }
+          },
+          "tokenization": {
+            "type": "object",
+            "title": "Tokenization 配置",
+            "description": "序列处理与损失计算策略，影响训练效率和模型学习内容",
+            "properties": {
+              "packing": {
+                "type": "boolean",
+                "title": "序列打包",
+                "description": "将多个短序列拼接打包成固定长度的序列，减少 padding 浪费，显著提高 GPU 利用率。短文本数据集推荐开启",
+                "default": false,
+                "x-cols": 6
+              },
+              "neatPacking": {
+                "type": "boolean",
+                "title": "无污染打包",
+                "description": "启用后打包的序列之间不会产生交叉注意力，避免不同样本相互影响。开启 packing 时建议同时开启",
+                "default": false,
+                "x-cols": 6
+              },
+              "trainOnPrompt": {
+                "type": "boolean",
+                "title": "在提示上训练",
+                "description": "是否在 prompt（用户输入）部分也计算损失。默认只在 response（助手回复）部分计算。某些场景开启可改善效果",
+                "default": false,
+                "x-cols": 6
+              },
+              "maskHistory": {
+                "type": "boolean",
+                "title": "遮蔽历史",
+                "description": "多轮对话中是否遮蔽历史消息，只在最后一轮计算损失。可减少计算量但可能影响多轮对话能力",
+                "default": false,
+                "x-cols": 6
+              }
+            }
+          },
+          "efficiency": {
+            "type": "object",
+            "title": "效率与性能配置",
+            "description": "混合精度训练、注意力优化、分布式训练等加速选项，可显著提升训练速度和降低显存占用",
+            "properties": {
+              "computeType": {
+                "type": "string",
+                "title": "计算精度",
+                "description": "混合精度训练类型。BF16 推荐用于 Ampere 及更新架构 GPU（如 A100、4090），FP16 用于较老架构（如 V100、2080）",
+                "default": "bf16",
+                "x-cols": 12,
+                "enum": ["bf16", "fp16", "pure_bf16", "fp32"],
+                "x-enum": [
+                  {
+                    "label": "BF16",
+                    "value": "bf16",
+                    "description": "推荐 A100/4090 等新卡"
+                  },
+                  {
+                    "label": "FP16",
+                    "value": "fp16",
+                    "description": "V100/2080 等较老卡"
+                  },
+                  {
+                    "label": "Pure BF16",
+                    "value": "pure_bf16",
+                    "description": "纯 BF16，更省显存"
+                  },
+                  {
+                    "label": "FP32",
+                    "value": "fp32",
+                    "description": "全精度，显存占用最高"
+                  }
+                ]
+              },
+              "flashAttn": {
+                "type": "string",
+                "title": "FlashAttention",
+                "description": "FlashAttention 可加速注意力计算并降低显存占用。需要 CUDA 11.6+ 和兼容 GPU。\"auto\" 会自动检测是否可用",
+                "default": "auto",
+                "x-cols": 12,
+                "enum": ["auto", "fa2", "disabled"],
+                "x-enum": [
+                  {
+                    "label": "自动检测",
+                    "value": "auto",
+                    "description": "自动检测并启用"
+                  },
+                  {
+                    "label": "FlashAttention-2",
+                    "value": "fa2",
+                    "description": "强制使用 FA2"
+                  },
+                  {
+                    "label": "禁用",
+                    "value": "disabled",
+                    "description": "不使用 FlashAttention"
+                  }
+                ]
+              },
+              "useUnsloth": {
+                "type": "boolean",
+                "title": "使用 Unsloth",
+                "description": "Unsloth 是一个高度优化的 LoRA 训练库，可提速 2~5 倍并进一步降低显存。需要单独安装 unsloth 包",
+                "default": false,
+                "x-cols": 6
+              },
+              "enableLigerKernel": {
+                "type": "boolean",
+                "title": "Liger Kernel",
+                "description": "启用 Liger Kernel 融合算子优化，可小幅提升训练速度。需要安装 liger-kernel 包",
+                "default": false,
+                "x-cols": 6
+              },
+              "gradientCheckpointing": {
+                "type": "boolean",
+                "title": "梯度检查点",
+                "description": "用计算换显存：前向传播时只保存部分激活值，反向传播时重新计算。可大幅降低显存占用但会增加约 20% 训练时间",
+                "default": true,
+                "x-cols": 6
+              },
+              "dsStage": {
+                "type": "string",
+                "title": "DeepSpeed 阶段",
+                "description": "DeepSpeed ZeRO 优化阶段，用于多 GPU 分布式训练。ZeRO-2 分片优化器状态，ZeRO-3 分片模型参数（单 GPU 不需要）",
+                "default": "none",
+                "x-cols": 12,
+                "enum": ["none", "2", "3"],
+                "x-enum": [
+                  {
+                    "label": "禁用",
+                    "value": "none",
+                    "description": "单 GPU 选择此项"
+                  },
+                  {
+                    "label": "ZeRO-2",
+                    "value": "2",
+                    "description": "多 GPU，分片优化器状态"
+                  },
+                  {
+                    "label": "ZeRO-3",
+                    "value": "3",
+                    "description": "多 GPU，分片模型参数"
+                  }
+                ]
+              },
+              "dsOffload": {
+                "type": "boolean",
+                "title": "DeepSpeed Offload",
+                "description": "将优化器状态和梯度卸载到 CPU 内存，进一步节省 GPU 显存但会降低训练速度。仅在启用 DeepSpeed 时有效",
+                "default": false,
+                "x-cols": 6
+              }
+            }
+          },
+          "galore": {
+            "type": "object",
+            "title": "GaLore 优化器",
+            "description": "Gradient Low-Rank Projection (GaLore) 优化器，通过对梯度进行低秩投影，支持以接近 LoRA 的显存占用进行全参数训练",
+            "allOf": [
+              {
+                "properties": {
+                  "useGalore": {
+                    "type": "boolean",
+                    "title": "启用 GaLore",
+                    "description": "启用 GaLore 优化器。适合想要全参数训练效果但显存有限的场景，与 LoRA 不兼容",
+                    "default": false
+                  }
+                },
+                "if": {
+                  "not": {
+                    "properties": {
+                      "useGalore": {
+                        "const": false
+                      }
+                    },
+                    "required": ["useGalore"]
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "galoreRank": {
+                      "type": "integer",
+                      "title": "GaLore Rank",
+                      "description": "GaLore 梯度投影的秩。越小越省显存但可能损失训练效果，通常设置 16~64",
+                      "default": 16,
+                      "minimum": 1,
+                      "maximum": 256,
+                      "x-cols": 6
+                    },
+                    "galoreUpdateInterval": {
+                      "type": "integer",
+                      "title": "更新间隔",
+                      "description": "投影矩阵更新的步数间隔。较大值减少计算开销但可能影响收敛",
+                      "default": 200,
+                      "minimum": 1,
+                      "maximum": 10000,
+                      "x-cols": 6
+                    },
+                    "galoreScale": {
+                      "type": "number",
+                      "title": "缩放系数",
+                      "description": "GaLore 梯度的缩放系数，用于调整学习速率",
+                      "default": 2.0,
+                      "minimum": 0.1,
+                      "maximum": 10.0,
+                      "x-cols": 6
+                    },
+                    "galoreTarget": {
+                      "type": "string",
+                      "title": "目标模块",
+                      "description": "应用 GaLore 的模块。\"all\" 表示所有线性层，也可指定特定模块",
+                      "default": "all"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "apollo": {
+            "type": "object",
+            "title": "APOLLO 优化器",
+            "description": "APOLLO (Approximated Gradient Optimization with Low-rank Decomposition) 优化器，另一种低秩优化方法，适用于大规模模型训练",
+            "allOf": [
+              {
+                "properties": {
+                  "useApollo": {
+                    "type": "boolean",
+                    "title": "启用 APOLLO",
+                    "description": "启用 APOLLO 优化器。与 GaLore 类似但使用不同的低秩分解策略",
+                    "default": false
+                  }
+                },
+                "if": {
+                  "not": {
+                    "properties": {
+                      "useApollo": {
+                        "const": false
+                      }
+                    },
+                    "required": ["useApollo"]
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "apolloRank": {
+                      "type": "integer",
+                      "title": "APOLLO Rank",
+                      "description": "APOLLO 梯度投影的秩，越小越省显存",
+                      "default": 16,
+                      "minimum": 1,
+                      "maximum": 256,
+                      "x-cols": 6
+                    },
+                    "apolloUpdateInterval": {
+                      "type": "integer",
+                      "title": "更新间隔",
+                      "description": "APOLLO 投影矩阵更新的步数间隔",
+                      "default": 200,
+                      "minimum": 1,
+                      "maximum": 10000,
+                      "x-cols": 6
+                    },
+                    "apolloScale": {
+                      "type": "number",
+                      "title": "缩放系数",
+                      "description": "APOLLO 梯度缩放系数，通常比 GaLore 大",
+                      "default": 32.0,
+                      "minimum": 0.1,
+                      "maximum": 100.0,
+                      "x-cols": 6
+                    },
+                    "apolloTarget": {
+                      "type": "string",
+                      "title": "目标模块",
+                      "description": "应用 APOLLO 的模块。\"all\" 表示所有线性层",
+                      "default": "all"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "badam": {
+            "type": "object",
+            "title": "BAdam 优化器",
+            "description": "Block-wise Adam 优化器，通过分块更新参数来节省显存，是另一种显存高效的全参数训练方案",
+            "allOf": [
+              {
+                "properties": {
+                  "useBadam": {
+                    "type": "boolean",
+                    "title": "启用 BAdam",
+                    "description": "启用 BAdam 优化器，每次只更新部分参数块，通过轮流更新实现全参数训练",
+                    "default": false
+                  }
+                },
+                "if": {
+                  "not": {
+                    "properties": {
+                      "useBadam": {
+                        "const": false
+                      }
+                    },
+                    "required": ["useBadam"]
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "badamMode": {
+                      "type": "string",
+                      "title": "BAdam 模式",
+                      "description": "参数块的划分方式。\"layer\" 按层划分，\"ratio\" 按比例划分",
+                      "default": "layer",
+                      "enum": ["layer", "ratio"],
+                      "x-enum": [
+                        {
+                          "label": "层级模式",
+                          "value": "layer",
+                          "description": "按 Transformer 层划分块"
+                        },
+                        {
+                          "label": "比例模式",
+                          "value": "ratio",
+                          "description": "按参数比例划分块"
+                        }
+                      ]
+                    },
+                    "badamSwitchMode": {
+                      "type": "string",
+                      "title": "切换策略",
+                      "description": "层级模式下参数块的切换顺序",
+                      "default": "ascending",
+                      "enum": ["ascending", "descending", "random", "fixed"],
+                      "x-enum": [
+                        {
+                          "label": "升序",
+                          "value": "ascending",
+                          "description": "从浅层到深层"
+                        },
+                        {
+                          "label": "降序",
+                          "value": "descending",
+                          "description": "从深层到浅层"
+                        },
+                        {
+                          "label": "随机",
+                          "value": "random",
+                          "description": "随机选择块"
+                        },
+                        {
+                          "label": "固定",
+                          "value": "fixed",
+                          "description": "固定更新某些块"
+                        }
+                      ]
+                    },
+                    "badamSwitchInterval": {
+                      "type": "integer",
+                      "title": "切换间隔",
+                      "description": "层级模式下每隔多少步切换到下一个参数块",
+                      "default": 50,
+                      "minimum": 1,
+                      "maximum": 10000,
+                      "x-cols": 6
+                    },
+                    "badamUpdateRatio": {
+                      "type": "number",
+                      "title": "更新比例",
+                      "description": "比例模式下每次更新的参数比例。0.05 表示每次更新 5% 的参数",
+                      "default": 0.05,
+                      "minimum": 0.01,
+                      "maximum": 1.0,
+                      "x-cols": 6
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "eval": {
+            "type": "object",
+            "title": "评估配置",
+            "description": "训练过程中的验证集评估设置，用于监控模型性能和防止过拟合",
+            "properties": {
+              "evalSteps": {
+                "type": "integer",
+                "title": "评估步数",
+                "description": "每隔多少步在验证集上评估一次模型。过于频繁会影响训练速度",
+                "default": 500,
+                "minimum": 10,
+                "maximum": 10000,
+                "x-cols": 6
+              },
+              "perDeviceEvalBatchSize": {
+                "type": "integer",
+                "title": "评估批次大小",
+                "description": "评估时每个 GPU 的批次大小。可以设置比训练时更大，因为评估不需要存储梯度",
+                "default": 4,
+                "minimum": 1,
+                "maximum": 128,
+                "x-cols": 6
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "anyOf": [
+            {
+              "properties": {
+                "runMode": {
+                  "const": "webui"
+                }
+              },
+              "required": ["runMode"]
+            },
+            {
+              "properties": {
+                "runMode": {
+                  "const": "quick"
+                }
+              },
+              "required": ["runMode"]
+            },
+            {
+              "properties": {
+                "basic": {
+                  "properties": {
+                    "finetuningType": {
+                      "const": "lora"
+                    }
+                  },
+                  "required": ["finetuningType"]
+                }
+              },
+              "required": ["basic"]
+            },
+            {
+              "properties": {
+                "basic": {
+                  "properties": {
+                    "finetuningType": {
+                      "const": "full"
+                    }
+                  },
+                  "required": ["finetuningType"]
+                }
+              },
+              "required": ["basic"]
+            },
+            {
+              "properties": {
+                "basic": {
+                  "properties": {
+                    "finetuningType": {
+                      "const": "freeze"
+                    }
+                  },
+                  "required": ["finetuningType"]
+                }
+              },
+              "required": ["basic"]
+            }
+          ]
+        }
+      },
+      "then": {
+        "properties": {
+          "quantization": {
+            "type": "object",
+            "title": "量化配置",
+            "description": "QLoRA 4-bit/8-bit 量化设置。量化可将模型权重压缩为更低精度，显著降低显存占用（约 1/4），使大模型可在消费级显卡上微调",
+            "properties": {
+              "quantizationBit": {
+                "type": "integer",
+                "title": "量化位数",
+                "description": "模型权重的量化精度。4-bit 显存占用最低但精度损失稍大，8-bit 是精度和显存的平衡选择",
+                "default": 4,
+                "x-cols": 6,
+                "enum": [4, 8],
+                "x-enum": [
+                  {
+                    "label": "4-bit",
+                    "value": 4,
+                    "description": "显存最省，推荐"
+                  },
+                  {
+                    "label": "8-bit",
+                    "value": 8,
+                    "description": "精度更高"
+                  }
+                ]
+              },
+              "quantizationType": {
+                "type": "string",
+                "title": "量化类型",
+                "description": "4-bit 量化的数据类型。NF4 (NormalFloat4) 针对正态分布权重优化，通常效果更好",
+                "default": "nf4",
+                "x-cols": 6,
+                "enum": ["nf4", "fp4"],
+                "x-enum": [
+                  {
+                    "label": "NF4",
+                    "value": "nf4",
+                    "description": "正态浮点，推荐"
+                  },
+                  {
+                    "label": "FP4",
+                    "value": "fp4",
+                    "description": "4-bit 浮点"
+                  }
+                ]
+              },
+              "doubleQuantization": {
+                "type": "boolean",
+                "title": "双重量化",
+                "description": "对量化常数进行二次量化，可再节省约 0.4GB/10B参数的显存，对训练效果影响很小",
+                "default": true,
+                "x-cols": 6
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "anyOf": [
+            {
+              "properties": {
+                "runMode": {
+                  "const": "webui"
+                }
+              },
+              "required": ["runMode"]
+            },
+            {
+              "properties": {
+                "runMode": {
+                  "const": "quick"
+                }
+              },
+              "required": ["runMode"]
+            },
+            {
+              "properties": {
+                "basic": {
+                  "properties": {
+                    "finetuningType": {
+                      "const": "full"
+                    }
+                  },
+                  "required": ["finetuningType"]
+                }
+              },
+              "required": ["basic"]
+            },
+            {
+              "properties": {
+                "basic": {
+                  "properties": {
+                    "finetuningType": {
+                      "const": "freeze"
+                    }
+                  },
+                  "required": ["finetuningType"]
+                }
+              },
+              "required": ["basic"]
+            }
+          ]
+        }
+      },
+      "then": {
+        "properties": {
+          "lora": {
+            "type": "object",
+            "title": "LoRA 配置",
+            "description": "Low-Rank Adaptation 参数设置。LoRA 通过在原始权重旁添加低秩矩阵实现高效微调，只需训练 0.1%~1% 的参数即可获得接近全参数微调的效果",
+            "properties": {
+              "loraRank": {
+                "type": "integer",
+                "title": "LoRA Rank",
+                "description": "LoRA 低秩矩阵的秩（维度）。越大模型表达能力越强但参数量越多。常用值：8、16、32、64。复杂任务可适当增大",
+                "default": 8,
+                "minimum": 1,
+                "maximum": 256,
+                "x-cols": 6
+              },
+              "loraAlpha": {
+                "type": "integer",
+                "title": "LoRA Alpha",
+                "description": "LoRA 的缩放系数，实际缩放比例为 alpha/rank。通常设为 rank 的 1~2 倍，如 rank=8 时 alpha=16",
+                "default": 16,
+                "minimum": 1,
+                "maximum": 512,
+                "x-cols": 6
+              },
+              "loraDropout": {
+                "type": "number",
+                "title": "LoRA Dropout",
+                "description": "LoRA 层的 Dropout 比例，用于正则化防止过拟合。通常设置 0~0.1，数据量小时可适当增大",
+                "default": 0.05,
+                "minimum": 0,
+                "maximum": 0.5,
+                "x-cols": 6
+              },
+              "loraTarget": {
+                "type": "string",
+                "title": "LoRA 目标模块",
+                "description": "指定对哪些模块应用 LoRA。\"all\" 表示所有线性层（推荐），也可指定特定模块如 \"q_proj,v_proj\"",
+                "default": "all"
+              },
+              "useRslora": {
+                "type": "boolean",
+                "title": "使用 rsLoRA",
+                "description": "Rank-Stabilized LoRA，使用改进的缩放方法 (1/√r) 使不同 rank 的效果更一致，推荐在尝试不同 rank 时启用",
+                "default": false,
+                "x-cols": 6
+              },
+              "useDora": {
+                "type": "boolean",
+                "title": "使用 DoRA",
+                "description": "Weight-Decomposed LoRA，将权重分解为方向和大小两部分分别优化，可能获得更好的效果但训练稍慢",
+                "default": false,
+                "x-cols": 6
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "anyOf": [
+            {
+              "properties": {
+                "runMode": {
+                  "const": "webui"
+                }
+              },
+              "required": ["runMode"]
+            },
+            {
+              "properties": {
+                "runMode": {
+                  "const": "quick"
+                }
+              },
+              "required": ["runMode"]
+            },
+            {
+              "properties": {
+                "basic": {
+                  "properties": {
+                    "finetuningType": {
+                      "const": "lora"
+                    }
+                  },
+                  "required": ["finetuningType"]
+                }
+              },
+              "required": ["basic"]
+            },
+            {
+              "properties": {
+                "basic": {
+                  "properties": {
+                    "finetuningType": {
+                      "const": "qlora"
+                    }
+                  },
+                  "required": ["finetuningType"]
+                }
+              },
+              "required": ["basic"]
+            },
+            {
+              "properties": {
+                "basic": {
+                  "properties": {
+                    "finetuningType": {
+                      "const": "full"
+                    }
+                  },
+                  "required": ["finetuningType"]
+                }
+              },
+              "required": ["basic"]
+            }
+          ]
+        }
+      },
+      "then": {
+        "properties": {
+          "freeze": {
+            "type": "object",
+            "title": "冻结层配置",
+            "description": "部分参数微调设置。冻结模型的大部分层，只训练少数层的参数，是介于 LoRA 和全参数微调之间的方案",
+            "properties": {
+              "freezeTrainableLayers": {
+                "type": "integer",
+                "title": "可训练层数",
+                "description": "正数 N 表示最后 N 层可训练（微调输出端），负数 -N 表示前 N 层可训练（微调输入端）。通常微调最后几层效果较好",
+                "default": 2,
+                "minimum": -100,
+                "maximum": 100,
+                "x-cols": 6
+              },
+              "freezeTrainableModules": {
+                "type": "string",
+                "title": "可训练模块",
+                "description": "指定哪些类型的模块可训练。\"all\" 表示可训练层中的所有模块，也可指定特定模块如 \"mlp,self_attn\"",
+                "default": "all"
+              },
+              "freezeExtraModules": {
+                "type": "string",
+                "title": "额外模块",
+                "description": "除了可训练层外，额外设为可训练的模块名称。如 \"embed_tokens,lm_head\" 可训练词嵌入层",
+                "default": ""
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "allOf": [
+          {
+            "not": {
+              "properties": {
+                "runMode": {
+                  "const": "webui"
+                }
+              },
+              "required": ["runMode"]
+            }
+          },
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "basic": {
+                      "properties": {
+                        "finetuningType": {
+                          "const": "full"
+                        }
+                      },
+                      "required": ["finetuningType"]
+                    }
+                  },
+                  "required": ["basic"]
+                },
+                {
+                  "properties": {
+                    "basic": {
+                      "properties": {
+                        "finetuningType": {
+                          "const": "freeze"
+                        }
+                      },
+                      "required": ["finetuningType"]
+                    }
+                  },
+                  "required": ["basic"]
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "output": {
+            "type": "object",
+            "properties": {
+              "mergeWeights": {
+                "type": "boolean",
+                "title": "合并权重",
+                "description": "训练完成后将 LoRA 权重合并到基座模型中，生成完整的可独立使用的模型。合并后的模型体积较大但推理时无需额外加载 LoRA",
+                "default": false,
+                "x-cols": 6
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

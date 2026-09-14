@@ -158,3 +158,23 @@ The value states after any operation must match the value initialization logic.
 ## User Interface Notes
 
 - When value of a field is removed or undefined, the field component should be inactive state, the default value is should not be showed as placeholder(not the actual value).
+
+### Rendering Order
+
+Field order is deterministic and follows the schema definition order:
+
+1. A schema's own `properties`, in declaration order.
+2. Then each `allOf` entry in array order. An entry appends only keys that are
+   not already present; a redeclared key keeps its first position.
+3. `if`/`then`/`else`, `anyOf` and `oneOf` contributions append after the same
+   base, in evaluation order.
+4. Array items follow index order (`prefixItems` first, then `items`).
+
+`x-order` (a number) overrides the definition order: entries are sorted ascending
+with a **stable** sort, so entries without `x-order` (treated as `Infinity`) and
+entries sharing the same `x-order` keep their definition order.
+
+This is a presentation convention. JSON Schema does not define a rendering order,
+and `allOf` is semantically unordered for validation — the runtime guarantees
+only that the order is deterministic and derived from the schema. Condition
+evaluation must therefore never depend on `allOf` order.

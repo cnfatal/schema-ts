@@ -109,12 +109,15 @@ export const Playground = ({ examples }: { examples?: Example[] }) => {
   }, [valueStr]);
 
   useEffect(() => {
-    if (schemaError) pushLog("error", `Schema parse error: ${schemaError}`);
-  }, [schemaError, pushLog]);
+    // Skip the transient empty state while an example is loading.
+    if (schemaStr && schemaError)
+      pushLog("error", `Schema parse error: ${schemaError}`);
+  }, [schemaStr, schemaError, pushLog]);
 
   useEffect(() => {
-    if (valueError) pushLog("error", `Values parse error: ${valueError}`);
-  }, [valueError, pushLog]);
+    if (valueStr && valueError)
+      pushLog("error", `Values parse error: ${valueError}`);
+  }, [valueStr, valueError, pushLog]);
 
   const renderer = useMemo(
     () =>

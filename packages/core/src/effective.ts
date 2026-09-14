@@ -1,6 +1,7 @@
 import type { Schema, SchemaType, Output } from "./type";
 import { matchSchemaType, detectSchemaType } from "./util";
 import type { Validator } from "./validate";
+import { projectDefaults } from "./default";
 
 export function resolveEffectiveSchema(
   validator: Validator,
@@ -12,6 +13,8 @@ export function resolveEffectiveSchema(
   validate: boolean = false,
   // root instance, available to custom validators (cross-field rules)
   rootValue?: unknown,
+  // whether the value is required by its parent (drives undefined projection)
+  required: boolean = false,
 ): {
   effectiveSchema: Schema;
   type: SchemaType;
@@ -19,12 +22,23 @@ export function resolveEffectiveSchema(
 } {
   // Schema is expected to be pre-dereferenced (all $refs resolved)
   let effective = schema;
+  // Conditional branches are evaluated against the defaults the runtime
+  // materializes, so a discriminator declared with a default (e.g.
+  // `runMode: { default: "quick" }`) selects the branch the form displays.
+  // `allOf` entries are unordered, so defaults from every unconditional
+  // `properties` (this schema plus all nested `allOf`) are projected up front;
+  // defaults introduced by a selected `then`/`else` are projected as they merge.
+  let current = projectBranchDefaults(
+    { ...effective, properties: unconditionalProperties(effective) },
+    value,
+    required,
+  );
 
   // if-then-else
   if (effective.if) {
     const output = validator.validate(
       effective.if,
-      value,
+      current,
       `${keywordLocation}/if`,
       instanceLocation,
       { fastFail: true },
@@ -34,7 +48,7 @@ export function resolveEffectiveSchema(
         const res = resolveEffectiveSchema(
           validator,
           effective.then,
-          value,
+          current,
           `${keywordLocation}/then`,
           instanceLocation,
           false,
@@ -44,13 +58,14 @@ export function resolveEffectiveSchema(
           res.effectiveSchema,
           `${keywordLocation}/then`,
         );
+        current = projectBranchDefaults(effective, current);
       }
     } else {
       if (effective.else) {
         const res = resolveEffectiveSchema(
           validator,
           effective.else,
-          value,
+          current,
           `${keywordLocation}/else`,
           instanceLocation,
           false,
@@ -60,6 +75,7 @@ export function resolveEffectiveSchema(
           res.effectiveSchema,
           `${keywordLocation}/else`,
         );
+        current = projectBranchDefaults(effective, current);
       }
     }
     // Remove if/then/else to prevent re-evaluation during shallow validation
@@ -74,7 +90,7 @@ export function resolveEffectiveSchema(
       const res = resolveEffectiveSchema(
         validator,
         subschema,
-        value,
+        current,
         subKeywordLocation,
         instanceLocation,
         false,
@@ -84,6 +100,7 @@ export function resolveEffectiveSchema(
         res.effectiveSchema,
         subKeywordLocation,
       );
+      current = projectBranchDefaults(effective, current);
     }
     // Remove allOf to prevent re-evaluation during shallow validation
     const { allOf: _, ...rest } = effective;
@@ -96,7 +113,7 @@ export function resolveEffectiveSchema(
       const subKeywordLocation = `${keywordLocation}/anyOf/${index}`;
       const output = validator.validate(
         subschema,
-        value,
+        current,
         subKeywordLocation,
         instanceLocation,
       );
@@ -104,7 +121,7 @@ export function resolveEffectiveSchema(
         const res = resolveEffectiveSchema(
           validator,
           subschema,
-          value,
+          current,
           subKeywordLocation,
           instanceLocation,
           false,
@@ -114,6 +131,7 @@ export function resolveEffectiveSchema(
           res.effectiveSchema,
           subKeywordLocation,
         );
+        current = projectBranchDefaults(effective, current);
       }
     }
     // Remove anyOf to prevent re-evaluation during shallow validation
@@ -129,7 +147,7 @@ export function resolveEffectiveSchema(
     for (const [index, subschema] of effective.oneOf.entries()) {
       const output = validator.validate(
         subschema,
-        value,
+        current,
         `${keywordLocation}/oneOf/${index}`,
         instanceLocation,
       );
@@ -193,6 +211,46 @@ export function resolveEffectiveSchema(
     type,
     error: validationOutput.valid ? undefined : validationOutput,
   };
+}
+
+/**
+ * Collect the properties that always apply: this schema's own `properties`
+ * plus those of every nested `allOf` subschema (recursively). `if`/`then`/
+ * `else`/`anyOf`/`oneOf` branches are excluded because they are conditional.
+ */
+function unconditionalProperties(schema: Schema): Record<string, Schema> {
+  const properties: Record<string, Schema> = {
+    ...(schema.properties ?? {}),
+  };
+  for (const subschema of schema.allOf ?? []) {
+    Object.assign(properties, unconditionalProperties(subschema));
+  }
+  return properties;
+}
+
+/**
+ * Project the defaults declared on `schema` onto `value` so conditional
+ * keywords (`if`, `anyOf`, `oneOf`) evaluate against the value the form
+ * materializes. Returns the original value when nothing changes.
+ */
+function projectBranchDefaults(
+  schema: Schema,
+  value: unknown,
+  required = false,
+): unknown {
+  if (value === undefined) {
+    // A required value is materialized by the runtime, so its default must be
+    // visible to the conditions as well.
+    return required ? projectDefaults("unknown", value, schema, true) : value;
+  }
+  if (value === null) return value;
+  const type = Array.isArray(value)
+    ? "array"
+    : typeof value === "object"
+      ? "object"
+      : undefined;
+  if (type === undefined) return value;
+  return projectDefaults(type, value, schema, false);
 }
 
 function mergeStrings(a?: string[], b?: string[]): string[] | undefined {

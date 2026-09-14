@@ -12,7 +12,7 @@ import {
 } from "./util";
 import { resolveEffectiveSchema } from "./effective";
 import { dereferenceSchemaDeep, getSubSchema } from "./schema-util";
-import { applyDefaults, getDefaultValue, projectDefaults } from "./default";
+import { applyDefaults, getDefaultValue } from "./default";
 import { BetterNormalizer, DraftNormalizer, Normalizer } from "./normalize";
 import type { Validator } from "./validate";
 import { collectDependencies } from "./dependency";
@@ -702,53 +702,27 @@ export class SchemaRuntime {
   }
 
   /**
-   * Resolve a node effective schema (if/then/else, allOf, anyOf, oneOf).
+   * Resolve a node's effective schema (if/then/else, allOf, anyOf, oneOf).
    *
-   * Conditions are evaluated against a default-projected copy of the value, so a
-   * discriminator declared with a default (for example enabled: { default: false })
-   * selects the same branch the form materializes. The projection mirrors
-   * applyDefaults and never mutates stored state, so genuinely absent values keep
-   * JSON Schema vacuous `properties` semantics.
+   * `resolveEffectiveSchema` evaluates conditions against the defaults the
+   * runtime materializes, so a discriminator declared with a default (for
+   * example `enabled: { default: false }`) selects the same branch the form
+   * displays. `node.required` lets it project a required value's default too.
    */
   private resolveEffectiveSchemaForNode(
     node: FieldNode,
     value: unknown,
   ): { type: SchemaType; effectiveSchema: Schema } {
     const { keywordLocation, instanceLocation, originalSchema } = node;
-    const resolved = resolveEffectiveSchema(
-      this.validator,
-      originalSchema,
-      value,
-      keywordLocation,
-      instanceLocation,
-      false,
-      this.value,
-    );
-
-    // Only `if` is projected: anyOf/oneOf branch selection is driven by full
-    // validation, where injecting defaults could destabilize the chosen branch.
-    if (!originalSchema.if) {
-      return resolved;
-    }
-
-    const projected = projectDefaults(
-      resolved.type,
-      value,
-      originalSchema,
-      node.required,
-    );
-    if (projected === value) {
-      return resolved;
-    }
-
     return resolveEffectiveSchema(
       this.validator,
       originalSchema,
-      projected,
+      value,
       keywordLocation,
       instanceLocation,
       false,
       this.value,
+      node.required,
     );
   }
 
