@@ -240,6 +240,35 @@ describe("Notify System", () => {
     });
   });
 
+  it("advances the field snapshot before notifying an externally assigned error", () => {
+    const runtime = new SchemaRuntime(
+      validator,
+      {
+        type: "object",
+        properties: { name: { type: "string" }, other: { type: "string" } },
+      },
+      { name: "draft", other: "saved" },
+    );
+    const node = runtime.getNode("/name")!;
+    const before = node.version;
+    const otherVersion = runtime.getNode("/other")!.version;
+    const snapshots: number[] = [];
+    runtime.subscribe("/name", () => snapshots.push(node.version));
+    node.error = {
+      valid: false,
+      keywordLocation: node.keywordLocation,
+      instanceLocation: "/name",
+      error: "Rejected",
+      errors: [],
+    };
+    runtime.notify({ type: "error", path: "/name" });
+    expect(snapshots[0]).toBeGreaterThan(before);
+    node.error = undefined;
+    runtime.notify({ type: "error", path: "/name" });
+    expect(snapshots[1]).toBeGreaterThan(snapshots[0]);
+    expect(runtime.getNode("/other")!.version).toBe(otherVersion);
+  });
+
   describe("Version tracking", () => {
     it("maintains consistent version across multiple operations", () => {
       const schema: Schema = {

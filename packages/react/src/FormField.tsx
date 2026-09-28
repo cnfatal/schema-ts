@@ -4,6 +4,7 @@ import {
   type FieldNode,
 } from "@schema-ts/core";
 import {
+  memo,
   type ReactNode,
   type RefCallback,
   useCallback,
@@ -98,5 +99,14 @@ export function FormField({ runtime, path, render, ...props }: FormFieldProps) {
 
   if (!renderProps) return null;
 
-  return render?.(renderProps) ?? null;
+  return <FieldContent {...renderProps} render={render} />;
 }
+
+// Keep subscriptions outside the memo boundary: parent reconciliation can update
+// descendant revisions without notifying each descendant path separately.
+const FieldContent = memo(function RenderField({
+  render,
+  ...props
+}: FormFieldRenderProps & Pick<FormFieldProps, "render">) {
+  return render?.(props) ?? null;
+});

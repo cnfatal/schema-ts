@@ -1,5 +1,11 @@
 # @schema-ts/core
 
+## 0.2.3
+
+### Patch Changes
+
+- Avoid rerendering unchanged fields when a controlled form's parent rerenders. Advance field revisions before notifying value, schema, and error changes so field-level subscriptions also display and clear validation or externally assigned errors without relying on a parent render.
+
 ## 0.2.2
 
 ### Patch Changes

@@ -1,5 +1,12 @@
 # @schema-ts/vue
 
+## 0.1.10
+
+### Patch Changes
+
+- Updated dependencies
+  - @schema-ts/core@0.2.3
+
 ## 0.1.9
 
 ### Patch Changes

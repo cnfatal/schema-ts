@@ -312,6 +312,9 @@ export class SchemaRuntime {
    */
   notify(event: SchemaChangeEvent) {
     this.version++;
+    // Subscribers read the field revision, including for error-only updates.
+    const node = this.getNode(event.path);
+    if (node) node.version++;
 
     const watchers = this.watchers[event.path];
     if (watchers) {

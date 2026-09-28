@@ -12,7 +12,7 @@ Unlike traditional static validators, `core` introduces the concept of a `Schema
 
 - **Dependency Tracking**: automatically analyzes dependencies between nodes. For example, if the schema of Field B depends on the value of Field A, `core` will automatically re-calculate the effective schema for Field B whenever Field A changes.
 
-- **Version Control**: Through a `version` mechanism, the UI layer can efficiently detect schema changes and trigger re-renders.
+- **Version Control**: A field revision changes before its subscribers are notified of value, schema, or error changes. Consumers can compare revisions to skip unrelated fields; the global revision alone does not describe a field snapshot.
 
 ## Two-Phase Node Building
 
